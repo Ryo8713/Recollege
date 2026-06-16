@@ -23,7 +23,7 @@
 						class="rounded-xl border border-slate-500 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 active:scale-[0.99] touch-manipulation"
 						@click="handleStaffLogout"
 					>
-						{{ authStore.staffAccount }} 登出
+						{{ authStore.staffName || authStore.staffAccount }} 登出
 					</button>
 				</div>
 			</div>

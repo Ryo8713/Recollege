@@ -2,16 +2,26 @@
 	<div class="space-y-4">
 		<section
 			v-if="hasRemoteUpdate"
-			class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900"
+			class="fixed right-4 top-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 shadow-lg"
 		>
-			<p>偵測到新的申請或租借資料更新，是否立即重新讀取？</p>
+			<div class="flex items-start justify-between gap-3">
+				<p class="font-semibold">申請或租借資料可能已更新，請重新整理。</p>
+				<button
+					type="button"
+					class="-mr-1 rounded px-1.5 py-0.5 text-lg font-bold leading-none text-blue-700 transition hover:bg-blue-100"
+					aria-label="關閉更新通知"
+					@click="dismissRemoteUpdate"
+				>
+					×
+				</button>
+			</div>
 			<button
 				type="button"
-				class="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
+				class="mt-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
 				:disabled="refreshingData"
 				@click="refreshStaffData"
 			>
-				{{ refreshingData ? "更新中..." : "重新讀取資料" }}
+				{{ refreshingData ? "更新中..." : "更新管理資料" }}
 			</button>
 		</section>
 
@@ -52,6 +62,8 @@ const assetsStore = useAssetsStore();
 const hasRemoteUpdate = ref(false);
 const refreshingData = ref(false);
 const lastKnownDataVersion = ref("");
+const latestRemoteDataVersion = ref("");
+const dismissedRemoteDataVersion = ref("");
 let versionPollTimer: ReturnType<typeof setInterval> | null = null;
 
 async function loadStaffData(force = false) {
@@ -66,6 +78,8 @@ async function syncDataVersionSnapshot() {
 	try {
 		const { version } = await sheetsApi.fetchDataVersion();
 		lastKnownDataVersion.value = version;
+		latestRemoteDataVersion.value = "";
+		dismissedRemoteDataVersion.value = "";
 	} catch {
 		// Ignore version errors to avoid blocking staff operations.
 	}
@@ -79,12 +93,18 @@ async function checkRemoteDataVersion() {
 			lastKnownDataVersion.value = version;
 			return;
 		}
-		if (version !== lastKnownDataVersion.value) {
+		if (version !== lastKnownDataVersion.value && version !== dismissedRemoteDataVersion.value) {
+			latestRemoteDataVersion.value = version;
 			hasRemoteUpdate.value = true;
 		}
 	} catch {
 		// Ignore intermittent network errors for polling.
 	}
+}
+
+function dismissRemoteUpdate() {
+	dismissedRemoteDataVersion.value = latestRemoteDataVersion.value;
+	hasRemoteUpdate.value = false;
 }
 
 async function refreshStaffData() {

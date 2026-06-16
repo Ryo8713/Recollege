@@ -9,6 +9,7 @@ const STAFF_PASSWORD = "1234";
 export const useAuthStore = defineStore("auth", () => {
 	const isStaffLoggedIn = ref(false);
 	const staffAccount = ref("");
+	const staffName = ref("");
 	const staffRole = ref<StaffRole>("staff");
 	const showStaffLoginModal = ref(false);
 	const staffLoginError = ref("");
@@ -40,6 +41,7 @@ export const useAuthStore = defineStore("auth", () => {
 				});
 				isStaffLoggedIn.value = true;
 				staffAccount.value = result.account;
+				staffName.value = result.name || result.account;
 				staffRole.value = result.role;
 			} else {
 				const valid =
@@ -50,6 +52,7 @@ export const useAuthStore = defineStore("auth", () => {
 				}
 				isStaffLoggedIn.value = true;
 				staffAccount.value = staffLoginForm.account;
+				staffName.value = staffLoginForm.account;
 				staffRole.value = "admin";
 			}
 			showStaffLoginModal.value = false;
@@ -63,7 +66,7 @@ export const useAuthStore = defineStore("auth", () => {
 		}
 	}
 
-	async function createStaffAccount(payload: { account: string; password: string }) {
+	async function createStaffAccount(payload: { account: string; name: string; password: string }) {
 		if (!isStaffLoggedIn.value) {
 			throw new Error("請先登入職員帳號。");
 		}
@@ -73,6 +76,7 @@ export const useAuthStore = defineStore("auth", () => {
 		return sheetsApi.createStaffAccount({
 			operatorAccount: staffAccount.value,
 			account: payload.account,
+			name: payload.name,
 			password: payload.password,
 		});
 	}
@@ -80,12 +84,14 @@ export const useAuthStore = defineStore("auth", () => {
 	function logoutStaff() {
 		isStaffLoggedIn.value = false;
 		staffAccount.value = "";
+		staffName.value = "";
 		staffRole.value = "staff";
 	}
 
 	return {
 		isStaffLoggedIn,
 		staffAccount,
+		staffName,
 		staffRole,
 		showStaffLoginModal,
 		staffLoginError,

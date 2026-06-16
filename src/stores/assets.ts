@@ -62,6 +62,12 @@ export const useAssetsStore = defineStore("assets", () => {
 		throw new Error("已寫入試算表，但讀取列表時找不到新項目，請重新整理頁面。");
 	}
 
+	async function deleteAsset(assetId: string, operatorAccount: string) {
+		await sheetsApi.deleteAsset({ assetId, operatorAccount });
+		removeAsset(assetId);
+		loadedAt.value = Date.now();
+	}
+
 	function setAssetStatus(assetId: string, status: Asset["status"]) {
 		const asset = assets.value.find((a) => a.id === assetId);
 		if (asset) {
@@ -84,6 +90,7 @@ export const useAssetsStore = defineStore("assets", () => {
 		availableEquipments,
 		loadAssets,
 		addAsset,
+		deleteAsset,
 		setAssetStatus,
 		removeAsset,
 	};

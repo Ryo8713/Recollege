@@ -1,4 +1,14 @@
-import type { Asset, AssetType, BorrowApplication, BorrowRecord, StaffAccountSummary, StaffRole } from "../types/rental";
+import type {
+    Asset,
+    AssetType,
+    BorrowApplication,
+    BorrowRecord,
+    Holiday,
+    GlobalPauseRange,
+    StaffAccountSummary,
+    StaffRole,
+    VenueAvailability,
+} from "../types/rental";
 
 const API_BASE_URL = import.meta.env.VITE_SHEETS_API_URL as string | undefined;
 
@@ -6,6 +16,7 @@ interface ReviewBorrowApplicationPayload {
     applicationId: string;
     action: "approve" | "reject";
     staffName: string;
+    rejectionReason?: string;
 }
 
 interface AvailabilityResponse {
@@ -28,6 +39,7 @@ interface AvailableReturnDatesResponse {
 interface AssetBlockedRangesResponse {
     today: string;
     blockedRangesByAssetId: Record<string, Array<{ start: string; end: string }>>;
+    globalPauseRanges?: Array<{ start: string; end: string }>;
 }
 
 interface AssetPauseRange {
@@ -46,6 +58,7 @@ interface DataVersionResponse {
 interface StaffLoginResponse {
     ok: boolean;
     account: string;
+    name: string;
     role: StaffRole;
 }
 
@@ -163,6 +176,55 @@ export const sheetsApi = {
         return request<AssetPauseRange[]>("asset-pauses");
     },
 
+    async fetchHolidays(): Promise<Holiday[]> {
+        return request<Holiday[]>("holidays");
+    },
+
+    async createHoliday(payload: {
+        operatorAccount: string;
+        date: string;
+        note?: string;
+    }): Promise<{ ok: boolean; date: string; note: string; createdAt: string; createdBy: string }> {
+        return request("holidays", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async deleteHoliday(payload: { operatorAccount: string; date: string }): Promise<{ ok: boolean; date: string }> {
+        return request("holiday-deletes", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async fetchGlobalPauseRanges(): Promise<GlobalPauseRange[]> {
+        return request<GlobalPauseRange[]>("global-pauses");
+    },
+
+    async createGlobalPauseRange(payload: {
+        operatorAccount: string;
+        startDate: string;
+        endDate: string;
+        note?: string;
+    }): Promise<GlobalPauseRange> {
+        return request<GlobalPauseRange>("global-pauses", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async deleteGlobalPauseRange(payload: { operatorAccount: string; id: string }): Promise<{ ok: boolean; id: string }> {
+        return request("global-pause-deletes", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async fetchVenueAvailability(assetId: string, date: string): Promise<VenueAvailability> {
+        return request<VenueAvailability>("venue-availability", undefined, { assetId, date });
+    },
+
     async createAssetPauseRange(payload: {
         assetId: string;
         startDate: string;
@@ -190,6 +252,13 @@ export const sheetsApi = {
         });
     },
 
+    async deleteAsset(payload: { operatorAccount: string; assetId: string }): Promise<{ ok: boolean; assetId: string; name: string }> {
+        return request<{ ok: boolean; assetId: string; name: string }>("asset-deletes", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
     async loginStaff(payload: { account: string; password: string }): Promise<StaffLoginResponse> {
         return request<StaffLoginResponse>("staff-login", {
             method: "POST",
@@ -200,16 +269,17 @@ export const sheetsApi = {
     async createStaffAccount(payload: {
         operatorAccount: string;
         account: string;
+        name: string;
         password: string;
-    }): Promise<{ ok: boolean; account: string }> {
-        return request<{ ok: boolean; account: string }>("staff-accounts", {
+    }): Promise<{ ok: boolean; account: string; name: string }> {
+        return request<{ ok: boolean; account: string; name: string }>("staff-accounts", {
             method: "POST",
             body: JSON.stringify(payload),
         });
     },
 
     async createBorrowApplication(
-        payload: Omit<BorrowApplication, "id" | "createdAt" | "status" | "reviewedBy" | "reviewedAt">,
+        payload: Omit<BorrowApplication, "id" | "createdAt" | "status" | "reviewedBy" | "reviewedAt" | "rejectionReason">,
     ): Promise<{ ok: boolean; applicationId: string }> {
         return request<{ ok: boolean; applicationId: string }>("borrow-applications", {
             method: "POST",

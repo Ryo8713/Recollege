@@ -1,7 +1,7 @@
-import { onMounted, ref, watch, type Ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { sheetsApi } from "../services/sheetsApi";
 import { addDays } from "../stores/rental";
-import type { Asset } from "../types/rental";
+import type { Asset, VenueAvailability } from "../types/rental";
 
 type BorrowMode = "borrow" | "return";
 type BorrowEntryMode = "dateFirst" | "assetFirst";
@@ -44,6 +44,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const returnDateInFlight = new Map<string, Promise<string[]>>();
 
 	const blockedRangesByAssetId = ref<Record<string, Array<{ start: string; end: string }>>>({});
+	const globalPauseRanges = ref<Array<{ start: string; end: string }>>([]);
 	const blockedRangesLoadedAt = ref(0);
 	const blockedRangesLoading = ref(false);
 	const blockedRangesRequestSeq = ref(0);
@@ -57,6 +58,94 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const lookupDatesCache = new Map<string, string[]>();
 	const lookupDatesInFlight = new Map<string, Promise<string[]>>();
 
+	// 空間（venue）以小時計的可借時段
+	const venueAvailability = ref<VenueAvailability | null>(null);
+	const venueAvailabilityLoading = ref(false);
+	const venueAvailabilityError = ref("");
+	const venueAvailabilityRequestSeq = ref(0);
+	const venueAvailabilityCache = new Map<string, VenueAvailability>();
+	const venueAvailabilityInFlight = new Map<string, Promise<VenueAvailability>>();
+	const venuePrecomputeQueuedKeys = new Set<string>();
+	const venuePrecomputeQueue: Array<{ assetId: string; date: string }> = [];
+	const currentTime = ref(new Date());
+	let venuePrecomputeActiveCount = 0;
+	let currentTimeTimer: ReturnType<typeof setInterval> | null = null;
+	const VENUE_PRECOMPUTE_CONCURRENCY = 3;
+
+	function toHour(hhmm: string): number {
+		return Number(String(hhmm || "").slice(0, 2));
+	}
+
+	function getDateText(date: Date): string {
+		return [
+			date.getFullYear(),
+			String(date.getMonth() + 1).padStart(2, "0"),
+			String(date.getDate()).padStart(2, "0"),
+		].join("-");
+	}
+
+	function getMinimumVenueStartHour(dateText: string): number | null {
+		const now = currentTime.value;
+		if (dateText !== getDateText(now)) return null;
+		return now.getMinutes() > 0 ? now.getHours() + 1 : now.getHours();
+	}
+
+	const venueOccupiedHourSet = computed(() => {
+		const set = new Set<number>();
+		const availability = venueAvailability.value;
+		if (!availability) return set;
+		for (const interval of availability.occupied) {
+			const start = toHour(interval.start);
+			const end = toHour(interval.end);
+			for (let hour = start; hour < end; hour += 1) {
+				set.add(hour);
+			}
+		}
+		return set;
+	});
+
+	const venueStartHours = computed<number[]>(() => {
+		const availability = venueAvailability.value;
+		if (!availability || availability.closed) return [];
+		const openStart = toHour(availability.openStart);
+		const openEnd = toHour(availability.openEnd);
+		const minimumStartHour = getMinimumVenueStartHour(availability.date);
+		const effectiveOpenStart = minimumStartHour == null ? openStart : Math.max(openStart, minimumStartHour);
+		const hours: number[] = [];
+		for (let hour = effectiveOpenStart; hour < openEnd; hour += 1) {
+			if (!venueOccupiedHourSet.value.has(hour)) {
+				hours.push(hour);
+			}
+		}
+		return hours;
+	});
+
+	async function loadVenueAvailability(assetId: string, date: string) {
+		venueAvailability.value = null;
+		venueAvailabilityError.value = "";
+		if (!assetId || !date) return;
+		const seq = ++venueAvailabilityRequestSeq.value;
+		const cached = venueAvailabilityCache.get(getVenueAvailabilityKey(assetId, date));
+		if (cached) {
+			venueAvailability.value = cached;
+			venueAvailabilityLoading.value = false;
+			return;
+		}
+		venueAvailabilityLoading.value = true;
+		try {
+			const result = await fetchVenueAvailabilityCached(assetId, date);
+			if (seq !== venueAvailabilityRequestSeq.value) return;
+			venueAvailability.value = result;
+		} catch (error) {
+			if (seq !== venueAvailabilityRequestSeq.value) return;
+			venueAvailabilityError.value = error instanceof Error ? error.message : "讀取可借時段失敗";
+		} finally {
+			if (seq === venueAvailabilityRequestSeq.value) {
+				venueAvailabilityLoading.value = false;
+			}
+		}
+	}
+
 	function getAvailabilityKey(borrowedAt: string): string {
 		return borrowedAt;
 	}
@@ -67,6 +156,85 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 
 	function getLookupDatesKey(assetId: string): string {
 		return `${assetId}|${today}|30`;
+	}
+
+	function getVenueAvailabilityKey(assetId: string, date: string): string {
+		return `${assetId}|${date}`;
+	}
+
+	function getDateWindow(fromDate: string, windowDays: number): string[] {
+		const dates: string[] = [];
+		for (let day = 0; day < windowDays; day += 1) {
+			dates.push(addDays(fromDate, day));
+		}
+		return dates;
+	}
+
+	function isVenueAsset(assetId: string): boolean {
+		return getAssets().some((asset) => asset.id === assetId && asset.type === "venue");
+	}
+
+	async function fetchVenueAvailabilityCached(assetId: string, date: string): Promise<VenueAvailability> {
+		const key = getVenueAvailabilityKey(assetId, date);
+		const cached = venueAvailabilityCache.get(key);
+		if (cached) return cached;
+
+		const existingPromise = venueAvailabilityInFlight.get(key);
+		if (existingPromise) return existingPromise;
+
+		const request = sheetsApi
+			.fetchVenueAvailability(assetId, date)
+			.then((result) => {
+				venueAvailabilityCache.set(key, result);
+				return result;
+			})
+			.finally(() => {
+				venueAvailabilityInFlight.delete(key);
+			});
+		venueAvailabilityInFlight.set(key, request);
+		return request;
+	}
+
+	function precomputeVenueAvailabilityInBackground(assetIds: string[], dates: string[]) {
+		if (assetIds.length === 0 || dates.length === 0) return;
+		setTimeout(() => {
+			for (const assetId of assetIds) {
+				for (const date of dates) {
+					const key = getVenueAvailabilityKey(assetId, date);
+					if (venueAvailabilityCache.has(key) || venueAvailabilityInFlight.has(key) || venuePrecomputeQueuedKeys.has(key)) {
+						continue;
+					}
+					venuePrecomputeQueuedKeys.add(key);
+					venuePrecomputeQueue.push({ assetId, date });
+				}
+			}
+			processVenuePrecomputeQueue();
+		}, 0);
+	}
+
+	function processVenuePrecomputeQueue() {
+		while (venuePrecomputeActiveCount < VENUE_PRECOMPUTE_CONCURRENCY && venuePrecomputeQueue.length > 0) {
+			const job = venuePrecomputeQueue.shift();
+			if (!job) return;
+			const key = getVenueAvailabilityKey(job.assetId, job.date);
+			venuePrecomputeQueuedKeys.delete(key);
+			if (venueAvailabilityCache.has(key)) continue;
+
+			venuePrecomputeActiveCount += 1;
+			void fetchVenueAvailabilityCached(job.assetId, job.date)
+				.catch(() => undefined)
+				.finally(() => {
+					venuePrecomputeActiveCount -= 1;
+					processVenuePrecomputeQueue();
+				});
+		}
+	}
+
+	function precomputeAllVenueAvailabilityInBackground(windowDays = 30) {
+		const venueAssetIds = getAssets()
+			.filter((asset) => asset.type === "venue" && asset.status !== "停用中")
+			.map((asset) => asset.id);
+		precomputeVenueAvailabilityInBackground(venueAssetIds, getDateWindow(today, windowDays));
 	}
 
 	function isDateRangeOverlapping(startA: string, endA: string, startB: string, endB: string): boolean {
@@ -81,11 +249,21 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return ranges.some((range) => isDateRangeOverlapping(range.start, range.end, startDate, endDate));
 	}
 
+	function isGloballyClosedDate(dateText: string): boolean {
+		return globalPauseRanges.value.some((range) => range.start <= dateText && dateText <= range.end);
+	}
+
+	function getCombinedBlockedRanges(assetId: string): Array<{ start: string; end: string }> {
+		const assetRanges = blockedRangesByAssetId.value[assetId] ?? [];
+		return [...globalPauseRanges.value, ...assetRanges];
+	}
+
 	function computeAvailableReturnDatesLocally(assetId: string, borrowedAt: string): string[] {
 		const asset = getAssets().find((item) => item.id === assetId);
 		if (!asset || asset.status === "停用中") return [];
+		if (isGloballyClosedDate(borrowedAt)) return [];
 
-		const blockedRanges = blockedRangesByAssetId.value[assetId] ?? [];
+		const blockedRanges = getCombinedBlockedRanges(assetId);
 		const dates: string[] = [];
 		for (let offset = 0; offset <= 6; offset += 1) {
 			const expectedReturnAt = addDays(borrowedAt, offset);
@@ -100,10 +278,11 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		const asset = getAssets().find((item) => item.id === assetId);
 		if (!asset || asset.status === "停用中") return [];
 
-		const blockedRanges = blockedRangesByAssetId.value[assetId] ?? [];
+		const blockedRanges = getCombinedBlockedRanges(assetId);
 		const dates: string[] = [];
 		for (let day = 0; day < windowDays; day += 1) {
 			const startDate = addDays(fromDate, day);
+			if (isGloballyClosedDate(startDate)) continue;
 			if (hasAnyAvailableReturnDate(startDate, blockedRanges)) {
 				dates.push(startDate);
 			}
@@ -124,6 +303,10 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return false;
 	}
 
+	function isBlockedOnDate(dateText: string, ranges: Array<{ start: string; end: string }>): boolean {
+		return ranges.some((range) => range.start <= dateText && dateText <= range.end);
+	}
+
 	function computeAvailableAssetsLocally(
 		borrowedAt: string,
 	): { venues: Asset[]; equipments: Asset[] } {
@@ -133,9 +316,13 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		for (let i = 0; i < allAssets.length; i += 1) {
 			const asset = allAssets[i];
 			if (asset.status === "停用中") continue;
-			const blockedRanges = blockedRangesByAssetId.value[asset.id] ?? [];
+			if (isGloballyClosedDate(borrowedAt)) continue;
+			const blockedRanges = getCombinedBlockedRanges(asset.id);
+			if (asset.type === "venue") {
+				if (!isBlockedOnDate(borrowedAt, blockedRanges)) venues.push(asset);
+				continue;
+			}
 			if (!hasAnyAvailableReturnDate(borrowedAt, blockedRanges)) continue;
-			if (asset.type === "venue") venues.push(asset);
 			if (asset.type === "equipment") equipments.push(asset);
 		}
 		return { venues, equipments };
@@ -153,6 +340,10 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		returnDateInFlight.clear();
 		lookupDatesCache.clear();
 		lookupDatesInFlight.clear();
+		venueAvailabilityCache.clear();
+		venueAvailabilityInFlight.clear();
+		venuePrecomputeQueuedKeys.clear();
+		venuePrecomputeQueue.length = 0;
 	}
 
 	function precomputeLookupDatesInBackground(fromDate = today, windowDays = 30) {
@@ -184,6 +375,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				return !shouldRefreshBlockedRanges();
 			}
 			blockedRangesByAssetId.value = response.blockedRangesByAssetId ?? {};
+			globalPauseRanges.value = response.globalPauseRanges ?? [];
 			blockedRangesLoadedAt.value = Date.now();
 			return true;
 		} catch (_error) {
@@ -219,6 +411,12 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			selectedAssetType.value = "";
 			availableReturnDates.value = [];
 			form.expectedReturnAt = "";
+		}
+		if (form.borrowedAt && result.venues.length > 0) {
+			precomputeVenueAvailabilityInBackground(
+				result.venues.map((venue) => venue.id),
+				[form.borrowedAt],
+			);
 		}
 	}
 
@@ -350,6 +548,9 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			lookupLoading.value = false;
 			lookupError.value = "";
 			lookupDates.value = cached;
+			if (isVenueAsset(selectedLookupAssetId.value)) {
+				precomputeVenueAvailabilityInBackground([selectedLookupAssetId.value], cached);
+			}
 			return;
 		}
 		lookupLoading.value = true;
@@ -359,7 +560,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		try {
 			const loaded = await ensureBlockedRangesLoaded();
 			if (seq !== lookupRequestSeq.value) return;
-			if (loaded && getAssets().length > 0) {
+			if (loaded && getAssets().length > 0 && !isVenueAsset(selectedLookupAssetId.value)) {
 				const dates = computeAssetAvailabilityDatesLocally(selectedLookupAssetId.value, today, 30);
 				lookupDatesCache.set(key, dates);
 				lookupDates.value = dates;
@@ -386,6 +587,9 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			const dates = await request;
 			if (seq !== lookupRequestSeq.value) return;
 			lookupDates.value = dates;
+			if (isVenueAsset(selectedLookupAssetId.value)) {
+				precomputeVenueAvailabilityInBackground([selectedLookupAssetId.value], dates);
+			}
 		} catch (error) {
 			if (seq !== lookupRequestSeq.value) return;
 			lookupError.value = error instanceof Error ? error.message : "查詢可借日期失敗";
@@ -418,7 +622,11 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 
 		borrowEntryMode.value = "dateFirst";
 		void loadAvailability();
-		void loadAvailableReturnDates();
+		if (selectedAssetType.value === "venue") {
+			void loadVenueAvailability(selectedAssetId.value, date);
+		} else {
+			void loadAvailableReturnDates();
+		}
 	}
 
 	watch(
@@ -436,7 +644,13 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		() => {
 			if (mode.value !== "borrow" || borrowEntryMode.value !== "dateFirst") return;
 			form.expectedReturnAt = "";
-			void loadAvailableReturnDates();
+			if (selectedAssetType.value === "venue") {
+				availableReturnDates.value = [];
+				void loadVenueAvailability(selectedAssetId.value, form.borrowedAt);
+			} else {
+				venueAvailability.value = null;
+				void loadAvailableReturnDates();
+			}
 		},
 	);
 
@@ -465,21 +679,33 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		() => {
 			if (!blockedRangesLoadedAt.value) return;
 			precomputeLookupDatesInBackground(today, 30);
+			precomputeAllVenueAvailabilityInBackground(30);
 		},
 	);
 
 	onMounted(() => {
+		currentTimeTimer = setInterval(() => {
+			currentTime.value = new Date();
+		}, 30 * 1000);
 		void ensureBlockedRangesLoaded().then((loaded) => {
 			if (loaded) {
 				precomputeLookupDatesInBackground(today, 30);
+				precomputeAllVenueAvailabilityInBackground(30);
 			}
 		});
+	});
+
+	onUnmounted(() => {
+		if (currentTimeTimer) {
+			clearInterval(currentTimeTimer);
+		}
 	});
 
 	async function refreshBorrowAvailability() {
 		clearAvailabilityCaches();
 		await ensureBlockedRangesLoaded(true);
 		precomputeLookupDatesInBackground(today, 30);
+		precomputeAllVenueAvailabilityInBackground(30);
 		if (mode.value !== "borrow") return;
 
 		if (borrowEntryMode.value === "dateFirst") {
@@ -487,7 +713,11 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				await loadAvailability();
 			}
 			if (selectedAssetId.value && form.borrowedAt) {
-				await loadAvailableReturnDates();
+				if (selectedAssetType.value === "venue") {
+					await loadVenueAvailability(selectedAssetId.value, form.borrowedAt);
+				} else {
+					await loadAvailableReturnDates();
+				}
 			}
 			return;
 		}
@@ -511,6 +741,11 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		lookupDates,
 		lookupLoading,
 		lookupError,
+		venueAvailability,
+		venueAvailabilityLoading,
+		venueAvailabilityError,
+		venueStartHours,
+		fetchVenueAvailabilityCached,
 		selectAsset,
 		applySuggestedBorrowDate,
 		clearAvailabilityCaches,

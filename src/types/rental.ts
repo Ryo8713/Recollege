@@ -33,6 +33,7 @@ export interface BorrowApplication {
     reviewedBy?: string;
     reviewedAt?: string;
     recordId?: string;
+    rejectionReason?: string;
 }
 
 export interface BorrowRecord {
@@ -55,8 +56,35 @@ export interface BorrowRecord {
 
 export interface StaffAccountSummary {
     account: string;
+    name: string;
     role: StaffRole;
     status: "active";
     createdAt: string;
     createdBy: string;
+}
+
+export interface Holiday {
+    date: string;
+    note: string;
+    createdAt: string;
+    createdBy: string;
+}
+
+export interface GlobalPauseRange {
+    id: string;
+    startDate: string;
+    endDate: string;
+    note: string;
+    createdAt: string;
+    createdBy: string;
+}
+
+export interface VenueAvailability {
+    assetId: string;
+    date: string;
+    openStart: string;
+    openEnd: string;
+    isHoliday: boolean;
+    occupied: Array<{ start: string; end: string }>;
+    closed: boolean;
 }

@@ -13,7 +13,7 @@
         aria-hidden="true"
       />
       <p class="mt-5 text-center text-base font-semibold text-slate-900">{{ loadingText }}</p>
-      <p class="mt-1 text-center text-sm text-slate-500">請稍候，正在寫入 Google 試算表…</p>
+      <p class="mt-1 text-center text-sm text-slate-500">請稍候</p>
     </section>
   </div>
 

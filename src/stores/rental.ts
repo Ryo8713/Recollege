@@ -33,7 +33,7 @@ export function getTodayText(): string {
 
 export function isOverdue(record: BorrowRecord): boolean {
     const today = getTodayText();
-    return record.status === "租借中" && record.expectedReturnAt < today;
+    return record.status === "租借中" && record.expectedReturnAt.slice(0, 10) < today;
 }
 
 export const useRentalStore = defineStore("rental", () => {
@@ -168,8 +168,9 @@ export const useRentalStore = defineStore("rental", () => {
         const previousReviewedBy = app.reviewedBy;
         const previousReviewedAt = app.reviewedAt;
         const previousRecordId = app.recordId;
+        const previousRejectionReason = app.rejectionReason;
         const reviewedAt = getTodayText();
-        const shouldBeActiveNow = app.borrowedAt <= reviewedAt;
+        const shouldBeActiveNow = app.borrowedAt.slice(0, 10) <= reviewedAt;
         const previousAssetStatuses = app.assetIds.map((assetId) => {
             const asset = assetsStore.assets.find((a) => a.id === assetId);
             return { assetId, status: asset?.status };
@@ -181,6 +182,7 @@ export const useRentalStore = defineStore("rental", () => {
         app.status = "已核准";
         app.reviewedBy = staffName;
         app.reviewedAt = reviewedAt;
+        app.rejectionReason = "";
 
         if (app.type === "借用申請") {
             optimisticRecord = {
@@ -235,6 +237,7 @@ export const useRentalStore = defineStore("rental", () => {
             app.reviewedBy = previousReviewedBy;
             app.reviewedAt = previousReviewedAt;
             app.recordId = previousRecordId;
+            app.rejectionReason = previousRejectionReason;
 
             if (optimisticRecord) {
                 records.value = records.value.filter((r) => r !== optimisticRecord);
@@ -259,7 +262,7 @@ export const useRentalStore = defineStore("rental", () => {
         }
     }
 
-    async function rejectApplication(applicationId: string, staffName: string) {
+    async function rejectApplication(applicationId: string, staffName: string, rejectionReason = "") {
         const app = applications.value.find((a) => a.id === applicationId);
         if (!app || app.status !== "待審核" || isReviewing(applicationId)) return;
 
@@ -269,6 +272,7 @@ export const useRentalStore = defineStore("rental", () => {
         const previousStatus = app.status;
         const previousReviewedBy = app.reviewedBy;
         const previousReviewedAt = app.reviewedAt;
+        const previousRejectionReason = app.rejectionReason;
         const previousReturnPendingStatus =
             app.type === "歸還申請" && app.recordId
                 ? records.value.find((r) => r.id === app.recordId)?.returnRequestStatus
@@ -277,6 +281,7 @@ export const useRentalStore = defineStore("rental", () => {
         app.status = "已駁回";
         app.reviewedBy = staffName;
         app.reviewedAt = getTodayText();
+        app.rejectionReason = rejectionReason.trim();
         if (app.type === "歸還申請" && app.recordId) {
             const record = records.value.find((r) => r.id === app.recordId);
             if (record) {
@@ -289,11 +294,13 @@ export const useRentalStore = defineStore("rental", () => {
                 applicationId,
                 action: "reject",
                 staffName,
+                rejectionReason: rejectionReason.trim(),
             });
         } catch (error) {
             app.status = previousStatus;
             app.reviewedBy = previousReviewedBy;
             app.reviewedAt = previousReviewedAt;
+            app.rejectionReason = previousRejectionReason;
             if (app.type === "歸還申請" && app.recordId) {
                 const record = records.value.find((r) => r.id === app.recordId);
                 if (record) {

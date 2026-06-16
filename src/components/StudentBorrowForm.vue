@@ -51,16 +51,30 @@
 									{{ form.borrowedAt ? formatDateZh(form.borrowedAt) : "尚未選擇" }}
 								</span>
 							</p>
-							<p class="font-semibold text-slate-500">歸還日期</p>
-							<p>
-								<span class="rounded bg-amber-100 px-2 py-0.5 font-bold text-amber-900">
-									{{ form.expectedReturnAt ? formatDateZh(form.expectedReturnAt) : "尚未選擇" }}
-								</span>
-							</p>
-							<p class="font-semibold text-slate-500">借用天數</p>
-							<p class="font-semibold text-slate-900">
-								{{ borrowDurationDays ? `${borrowDurationDays} 天（含借用當日）` : "尚未選擇" }}
-							</p>
+							<template v-if="isVenueSelected">
+								<p class="font-semibold text-slate-500">借用時段</p>
+								<p>
+									<span class="rounded bg-amber-100 px-2 py-0.5 font-bold text-amber-900">
+										{{ selectedVenueSlotLabels.length > 0 ? selectedVenueSlotLabels.join("、") : "尚未選擇" }}
+									</span>
+								</p>
+								<p class="font-semibold text-slate-500">借用時數</p>
+								<p class="font-semibold text-slate-900">
+									{{ venueDurationHours ? `${venueDurationHours} 小時` : "尚未選擇" }}
+								</p>
+							</template>
+							<template v-else>
+								<p class="font-semibold text-slate-500">歸還日期</p>
+								<p>
+									<span class="rounded bg-amber-100 px-2 py-0.5 font-bold text-amber-900">
+										{{ form.expectedReturnAt ? formatDateZh(form.expectedReturnAt) : "尚未選擇" }}
+									</span>
+								</p>
+								<p class="font-semibold text-slate-500">借用天數</p>
+								<p class="font-semibold text-slate-900">
+									{{ borrowDurationDays ? `${borrowDurationDays} 天（含借用當日）` : "尚未選擇" }}
+								</p>
+							</template>
 						</div>
 					</section>
 
@@ -134,9 +148,19 @@
 		</div>
 		<div
 			v-if="hasRemoteUpdate"
-			class="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 shadow-lg"
+			class="fixed right-4 top-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 shadow-lg"
 		>
-			<p class="font-semibold">可借資料可能已更新，請重新整理。</p>
+			<div class="flex items-start justify-between gap-3">
+				<p class="font-semibold">可借資料可能已更新，請重新整理。</p>
+				<button
+					type="button"
+					class="-mr-1 rounded px-1.5 py-0.5 text-lg font-bold leading-none text-blue-700 transition hover:bg-blue-100"
+					aria-label="關閉更新通知"
+					@click="dismissRemoteUpdate"
+				>
+					×
+				</button>
+			</div>
 			<button
 				type="button"
 				class="mt-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
@@ -234,7 +258,44 @@
 					</div>
 				</section>
 
-				<section class="border-b border-slate-200 pb-4">
+				<section v-if="isVenueSelected" class="border-b border-slate-200 pb-4">
+					<h3 class="text-sm font-semibold text-slate-800">[步驟 3]選擇借用時段</h3>
+					<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
+					<p v-else-if="venueAvailabilityLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在讀取可借時段...</p>
+					<p v-else-if="venueAvailabilityError" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ venueAvailabilityError }}</p>
+					<div v-else-if="venueAvailability && !venueAvailability.closed" class="mt-2 space-y-3">
+						<p class="text-xs font-semibold text-slate-500">
+							{{ venueAvailability.isHoliday ? "假日" : "平日" }}可借時段
+							{{ venueAvailability.openStart }}–{{ venueAvailability.openEnd }}
+						</p>
+						<div>
+							<p class="text-xs font-semibold text-slate-500">可借時段</p>
+							<div v-if="venueStartHours.length > 0" class="mt-1 flex flex-wrap gap-2">
+								<button
+									v-for="hour in venueStartHours"
+									:key="`slot-${hour}`"
+									type="button"
+									class="rounded-full border px-3 py-1.5 text-sm font-medium transition"
+									:class="
+										selectedVenueSlotSet.has(hour)
+											? 'border-emerald-700 bg-emerald-700 text-white'
+											: 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+									"
+									@click="toggleVenueSlot(hour)"
+								>
+									{{ formatHourRangeLabel(hour) }}
+								</button>
+							</div>
+							<p v-else class="mt-1 text-sm text-slate-500">此日已無可借時段，請改選日期或品項。</p>
+						</div>
+						<p v-if="venueDurationHours > 0" class="text-sm font-semibold text-slate-900">
+							已選 {{ venueDurationHours }} 小時：{{ selectedVenueSlotLabels.join("、") }}
+						</p>
+					</div>
+					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">此空間於所選日期不開放借用，請改選日期或品項。</p>
+				</section>
+
+				<section v-else class="border-b border-slate-200 pb-4">
 					<h3 class="text-sm font-semibold text-slate-800">[步驟 3]選擇欲歸還日期</h3>
 					<p class="mt-1 text-xs text-slate-500">最多借用 7 天（含借用當日）。</p>
 					<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
@@ -263,7 +324,7 @@
 						<h3 class="text-sm font-semibold text-slate-800">[步驟 4]填寫借用資料</h3>
 					<div class="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
 						<label class="space-y-1 text-sm text-slate-700">
-							<span class="font-medium">學號</span>
+							<span class="font-medium">學號/員編</span>
 							<input
 								v-model.trim="form.studentId"
 								class="w-full rounded-xl border border-slate-300 px-3 py-2 outline-none ring-blue-500 focus:ring"
@@ -341,38 +402,75 @@
 				<p v-if="lookupError" class="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ lookupError }}</p>
 				<p v-else-if="lookupLoading" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">查詢中...</p>
 				<div v-else-if="lookupDates.length > 0" class="space-y-4">
-					<p class="text-sm text-slate-600">點選日期後會帶入借用日期，並切換到「依日期查詢可借項目」繼續填單。</p>
-					<section
-						v-for="section in lookupCalendarSections"
-						:key="section.key"
-						class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
-					>
-						<h4 class="text-sm font-semibold text-slate-800">{{ section.label }}</h4>
-						<div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500">
-							<span v-for="weekday in lookupWeekdayLabels" :key="`${section.key}-${weekday}`">{{ weekday }}</span>
-						</div>
-						<div class="grid grid-cols-7 gap-1">
-							<template v-for="(cell, index) in section.dayCells" :key="`${section.key}-${index}`">
-								<div v-if="!cell" class="h-10 rounded-lg" aria-hidden="true"></div>
+					<div v-if="isLookupVenueSelected" class="space-y-3">
+						<p class="text-sm text-slate-600">以下列出未來 30 天內可借日期與可借時段，點選日期後可繼續填單。</p>
+						<p v-if="venueLookupPreviewLoading" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在整理可借時段...</p>
+						<p v-else-if="venueLookupPreviewError" class="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ venueLookupPreviewError }}</p>
+						<section
+							v-for="preview in venueLookupPreviews"
+							:key="preview.date"
+							class="rounded-xl border border-blue-100 bg-blue-50/50 p-3"
+						>
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<div>
+									<h4 class="text-sm font-bold text-blue-950">{{ formatDateZh(preview.date) }}</h4>
+									<p class="text-xs font-semibold text-blue-700">
+										{{ preview.isHoliday ? "假日" : "平日" }}可借時段
+									</p>
+								</div>
 								<button
-									v-else
 									type="button"
-									class="h-10 rounded-lg border text-sm font-semibold transition"
-									:class="
-										cell.available
-											? form.borrowedAt === cell.date
-												? 'border-blue-700 bg-blue-700 text-white'
-												: 'border-blue-200 bg-white text-blue-800 hover:bg-blue-50'
-											: 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
-									"
-									:disabled="!cell.available"
-									@click="applySuggestedBorrowDate(cell.date)"
+									class="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-600"
+									@click="applySuggestedBorrowDate(preview.date)"
 								>
-									{{ cell.day }}
+									選擇
 								</button>
-							</template>
-						</div>
-					</section>
+							</div>
+							<div class="mt-2 flex flex-wrap gap-2">
+								<span
+									v-for="slot in preview.slots"
+									:key="`${preview.date}-${slot}`"
+									class="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-800"
+								>
+									{{ slot }}
+								</span>
+							</div>
+						</section>
+					</div>
+					<div v-else class="space-y-4">
+						<p class="text-sm text-slate-600">點選日期後會帶入借用日期，並切換到「依日期查詢可借項目」繼續填單。</p>
+						<section
+							v-for="section in lookupCalendarSections"
+							:key="section.key"
+							class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
+						>
+							<h4 class="text-sm font-semibold text-slate-800">{{ section.label }}</h4>
+							<div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500">
+								<span v-for="weekday in lookupWeekdayLabels" :key="`${section.key}-${weekday}`">{{ weekday }}</span>
+							</div>
+							<div class="grid grid-cols-7 gap-1">
+								<template v-for="(cell, index) in section.dayCells" :key="`${section.key}-${index}`">
+									<div v-if="!cell" class="h-10 rounded-lg" aria-hidden="true"></div>
+									<button
+										v-else
+										type="button"
+										class="h-10 rounded-lg border text-sm font-semibold transition"
+										:class="
+											cell.available
+												? form.borrowedAt === cell.date
+													? 'border-blue-700 bg-blue-700 text-white'
+													: 'border-blue-200 bg-white text-blue-800 hover:bg-blue-50'
+												: 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
+										"
+										:disabled="!cell.available"
+										@click="applySuggestedBorrowDate(cell.date)"
+									>
+										{{ cell.day }}
+									</button>
+								</template>
+							</div>
+						</section>
+					</div>
 				</div>
 				<p v-else-if="selectedLookupAssetId" class="text-sm text-slate-500">目前不開放借用。</p>
 			</div>
@@ -433,8 +531,12 @@
 								歸還申請待審核
 							</span>
 						</div>
-						<p class="mt-0.5 text-sm text-slate-500">
-							借用日期：{{ formatDateZh(record.borrowedAt) }} | 應還日期：{{ formatDateZh(record.expectedReturnAt) }}
+						<p class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+							<span class="font-semibold text-amber-700">借用時間：</span>
+							<span class="font-bold text-slate-950">{{ formatTemporalZh(record.borrowedAt) }}</span>
+							<span class="mx-2 text-slate-400">|</span>
+							<span class="font-semibold text-amber-700">應還時間：</span>
+							<span class="font-bold text-slate-950">{{ formatTemporalZh(record.expectedReturnAt) }}</span>
 						</p>
 						<p v-if="rentalStore.isOverdue(record)" class="mt-0.5 text-xs font-semibold text-red-700">
 							已逾借
@@ -463,7 +565,7 @@ import { useBorrowAvailability } from "../composables/useBorrowAvailability";
 import { useAssetsStore } from "../stores/assets";
 import { useRentalStore, addDays, getTodayText } from "../stores/rental";
 import { sheetsApi } from "../services/sheetsApi";
-import type { Asset } from "../types/rental";
+import type { Asset, VenueAvailability } from "../types/rental";
 import type { ReturnSearchRecord } from "../stores/rental";
 
 const assetsStore = useAssetsStore();
@@ -492,6 +594,8 @@ const showBorrowConfirmModal = ref(false);
 const hasRemoteUpdate = ref(false);
 const isRefreshingLatestData = ref(false);
 const lastKnownDataVersion = ref("");
+const latestRemoteDataVersion = ref("");
+const dismissedRemoteDataVersion = ref("");
 let dataVersionPollTimer: ReturnType<typeof setInterval> | null = null;
 type SubmitFeedbackPhase = null | "loading" | "result";
 const submitFeedback = reactive<{
@@ -529,6 +633,11 @@ const {
 	lookupDates,
 	lookupLoading,
 	lookupError,
+	venueAvailability,
+	venueAvailabilityLoading,
+	venueAvailabilityError,
+	venueStartHours,
+	fetchVenueAvailabilityCached,
 	selectAsset,
 	applySuggestedBorrowDate,
 	clearAvailabilityCaches,
@@ -540,6 +649,90 @@ const {
 	mode,
 	borrowEntryMode,
 	today,
+});
+
+const isVenueSelected = computed(() => selectedAssetType.value === "venue");
+const selectedVenueSlotHours = ref<number[]>([]);
+const selectedVenueSlotSet = computed(() => new Set(selectedVenueSlotHours.value));
+const sortedSelectedVenueSlotHours = computed(() => [...selectedVenueSlotHours.value].sort((a, b) => a - b));
+const selectedVenueStartHour = computed(() => sortedSelectedVenueSlotHours.value[0] ?? null);
+const selectedVenueEndHour = computed(() => {
+	const selected = sortedSelectedVenueSlotHours.value;
+	const lastHour = selected[selected.length - 1];
+	return lastHour == null ? null : lastHour + 1;
+});
+const selectedVenueSlotLabels = computed(() =>
+	sortedSelectedVenueSlotHours.value.map((hour) => formatHourRangeLabel(hour)),
+);
+const venueDurationHours = computed(() =>
+	selectedVenueSlotHours.value.length,
+);
+
+function padHour(value: number): string {
+	return String(value).padStart(2, "0");
+}
+
+function formatHourLabel(value: number): string {
+	return `${padHour(value)}:00`;
+}
+
+function formatHourRangeLabel(startHour: number): string {
+	return `${formatHourLabel(startHour)}-${formatHourLabel(startHour + 1)}`;
+}
+
+function getDateText(date: Date): string {
+	return [
+		date.getFullYear(),
+		String(date.getMonth() + 1).padStart(2, "0"),
+		String(date.getDate()).padStart(2, "0"),
+	].join("-");
+}
+
+function getMinimumVenueStartHour(dateText: string): number | null {
+	const now = new Date();
+	if (dateText !== getDateText(now)) return null;
+	return now.getMinutes() > 0 ? now.getHours() + 1 : now.getHours();
+}
+
+function toggleVenueSlot(hour: number) {
+	const selected = sortedSelectedVenueSlotHours.value;
+	if (selected.length === 0) {
+		selectedVenueSlotHours.value = [hour];
+		return;
+	}
+
+	const min = selected[0];
+	const max = selected[selected.length - 1];
+	if (selectedVenueSlotSet.value.has(hour)) {
+		if (hour === min || hour === max) {
+			selectedVenueSlotHours.value = selected.filter((selectedHour) => selectedHour !== hour);
+			return;
+		}
+		selectedVenueSlotHours.value = [hour];
+		return;
+	}
+
+	if (hour === min - 1 || hour === max + 1) {
+		selectedVenueSlotHours.value = [...selected, hour].sort((a, b) => a - b);
+		return;
+	}
+
+	selectedVenueSlotHours.value = [hour];
+}
+
+watch(
+	() => [selectedAssetId.value, form.borrowedAt],
+	() => {
+		selectedVenueSlotHours.value = [];
+	},
+);
+
+watch(venueStartHours, (hours) => {
+	const available = new Set(hours);
+	const selected = selectedVenueSlotHours.value.filter((hour) => available.has(hour));
+	if (selected.length !== selectedVenueSlotHours.value.length) {
+		selectedVenueSlotHours.value = selected;
+	}
 });
 
 const selectedAssetName = computed(() => {
@@ -580,10 +773,22 @@ function formatDateZh(value: string): string {
 	return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function formatTemporalZh(value: string): string {
+	const text = String(value || "").trim();
+	const dateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(text);
+	if (dateTime) {
+		const [, y, m, d, hh, mm] = dateTime;
+		return `${y}年${Number(m)}月${Number(d)}日 ${hh}:${mm}`;
+	}
+	return formatDateZh(text);
+}
+
 async function syncDataVersionSnapshot() {
 	try {
 		const { version } = await sheetsApi.fetchDataVersion();
 		lastKnownDataVersion.value = version;
+		latestRemoteDataVersion.value = "";
+		dismissedRemoteDataVersion.value = "";
 	} catch {
 		// Ignore version sync errors; borrow flow should still work.
 	}
@@ -598,12 +803,18 @@ async function checkRemoteDataVersion() {
 			lastKnownDataVersion.value = version;
 			return;
 		}
-		if (version !== lastKnownDataVersion.value) {
+		if (version !== lastKnownDataVersion.value && version !== dismissedRemoteDataVersion.value) {
+			latestRemoteDataVersion.value = version;
 			hasRemoteUpdate.value = true;
 		}
 	} catch {
 		// Ignore polling errors and try again next tick.
 	}
+}
+
+function dismissRemoteUpdate() {
+	dismissedRemoteDataVersion.value = latestRemoteDataVersion.value;
+	hasRemoteUpdate.value = false;
 }
 
 async function refreshLatestData() {
@@ -631,6 +842,12 @@ async function submitBorrow() {
 	showBorrowConfirmModal.value = false;
 
 	const assetIds = [selectedAssetId.value];
+	const borrowedAtPayload = isVenueSelected.value
+		? `${form.borrowedAt} ${formatHourLabel(selectedVenueStartHour.value as number)}`
+		: form.borrowedAt;
+	const expectedReturnAtPayload = isVenueSelected.value
+		? `${form.borrowedAt} ${formatHourLabel(selectedVenueEndHour.value as number)}`
+		: form.expectedReturnAt;
 
 	submitFeedback.phase = "loading";
 	submitFeedback.loadingText = "正在送出借用申請…";
@@ -646,8 +863,8 @@ async function submitBorrow() {
 			activityName: form.activityName,
 			itemName: buildItemName(),
 			assetIds,
-			borrowedAt: form.borrowedAt,
-			expectedReturnAt: form.expectedReturnAt,
+			borrowedAt: borrowedAtPayload,
+			expectedReturnAt: expectedReturnAtPayload,
 		});
 		clearAvailabilityCaches();
 		void ensureBlockedRangesLoaded(true);
@@ -655,6 +872,7 @@ async function submitBorrow() {
 		selectedAssetId.value = "";
 		selectedAssetType.value = "";
 		availableReturnDates.value = [];
+		selectedVenueSlotHours.value = [];
 		form.studentId = "";
 		form.studentName = "";
 		form.studentPhone = "";
@@ -691,8 +909,8 @@ function validateBorrowBeforeSubmit(): boolean {
 		borrowError.value = "請填寫借用團體與活動名稱。";
 		return false;
 	}
-	if (!form.borrowedAt || !form.expectedReturnAt) {
-		borrowError.value = "請先選擇借用日期與可歸還日期。";
+	if (!form.borrowedAt) {
+		borrowError.value = "請先選擇借用日期。";
 		return false;
 	}
 	if (form.borrowedAt < today) {
@@ -701,6 +919,22 @@ function validateBorrowBeforeSubmit(): boolean {
 	}
 	if (availabilityLoading.value) {
 		borrowError.value = "可借項目仍在更新中，請稍候再送出。";
+		return false;
+	}
+	if (isVenueSelected.value) {
+		if (selectedVenueSlotHours.value.length === 0) {
+			borrowError.value = "請選擇空間借用時段。";
+			return false;
+		}
+		const availableStartHours = new Set(venueStartHours.value);
+		if (selectedVenueSlotHours.value.some((hour) => !availableStartHours.has(hour))) {
+			borrowError.value = "所選時段已開始或已不可借，請重新選擇時段。";
+			return false;
+		}
+		return true;
+	}
+	if (!form.expectedReturnAt) {
+		borrowError.value = "請先選擇可歸還日期。";
 		return false;
 	}
 	const min = addDays(form.borrowedAt, 0);
@@ -726,8 +960,78 @@ const returnSuccess = ref("");
 const returnSearchLoading = ref(false);
 const selectedLookupVenueId = ref("");
 const selectedLookupEquipmentId = ref("");
+const venueLookupPreviews = ref<Array<{ date: string; isHoliday: boolean; slots: string[] }>>([]);
+const venueLookupPreviewLoading = ref(false);
+const venueLookupPreviewError = ref("");
+const venueLookupPreviewSeq = ref(0);
+const isLookupVenueSelected = computed(() => Boolean(selectedLookupVenueId.value));
 
 const lookupWeekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
+
+function getAvailableSlotLabels(availability: VenueAvailability): string[] {
+	if (availability.closed) return [];
+	const occupied = new Set<number>();
+	for (const interval of availability.occupied) {
+		const start = Number(interval.start.slice(0, 2));
+		const end = Number(interval.end.slice(0, 2));
+		for (let hour = start; hour < end; hour += 1) {
+			occupied.add(hour);
+		}
+	}
+
+	const slots: string[] = [];
+	const openStart = Number(availability.openStart.slice(0, 2));
+	const openEnd = Number(availability.openEnd.slice(0, 2));
+	const minimumStartHour = getMinimumVenueStartHour(availability.date);
+	const effectiveOpenStart = minimumStartHour == null ? openStart : Math.max(openStart, minimumStartHour);
+	for (let hour = effectiveOpenStart; hour < openEnd; hour += 1) {
+		if (!occupied.has(hour)) {
+			slots.push(formatHourRangeLabel(hour));
+		}
+	}
+	return slots;
+}
+
+async function loadVenueLookupPreviews() {
+	venueLookupPreviews.value = [];
+	venueLookupPreviewError.value = "";
+	if (!selectedLookupVenueId.value || lookupDates.value.length === 0) return;
+
+	const seq = ++venueLookupPreviewSeq.value;
+	venueLookupPreviewLoading.value = true;
+	try {
+		const dates = [...lookupDates.value];
+		const workerCount = Math.min(3, dates.length);
+		let nextIndex = 0;
+		await Promise.all(
+			Array.from({ length: workerCount }, async () => {
+				while (nextIndex < dates.length) {
+					const date = dates[nextIndex];
+					nextIndex += 1;
+					if (seq !== venueLookupPreviewSeq.value) return;
+
+					const availability = await fetchVenueAvailabilityCached(selectedLookupVenueId.value, date);
+					if (seq !== venueLookupPreviewSeq.value) return;
+					const slots = getAvailableSlotLabels(availability);
+					if (slots.length === 0) continue;
+					const nextPreviews = [
+						...venueLookupPreviews.value.filter((preview) => preview.date !== date),
+						{ date, isHoliday: availability.isHoliday, slots },
+					].sort((a, b) => a.date.localeCompare(b.date));
+					venueLookupPreviews.value = nextPreviews;
+				}
+			}),
+		);
+		if (seq !== venueLookupPreviewSeq.value) return;
+	} catch (error) {
+		if (seq !== venueLookupPreviewSeq.value) return;
+		venueLookupPreviewError.value = error instanceof Error ? error.message : "整理空間可借時段失敗";
+	} finally {
+		if (seq === venueLookupPreviewSeq.value) {
+			venueLookupPreviewLoading.value = false;
+		}
+	}
+}
 
 const lookupCalendarSections = computed(() => {
 	const byMonth = new Map<string, string[]>();
@@ -876,6 +1180,17 @@ watch(
 		}
 	},
 	{ immediate: true },
+);
+
+watch(
+	() => [selectedLookupVenueId.value, lookupDates.value.join("|"), borrowEntryMode.value, mode.value],
+	() => {
+		venueLookupPreviews.value = [];
+		venueLookupPreviewError.value = "";
+		if (mode.value !== "borrow" || borrowEntryMode.value !== "assetFirst") return;
+		if (!selectedLookupVenueId.value || lookupDates.value.length === 0) return;
+		void loadVenueLookupPreviews();
+	},
 );
 
 onMounted(() => {
