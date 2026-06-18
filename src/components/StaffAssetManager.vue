@@ -15,7 +15,7 @@
       @click.self="showAddPanel = false"
     >
       <section class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-        <h4 class="text-base font-bold text-slate-900">新增資產</h4>
+        <h4 class="text-base font-bold text-slate-900">新增財物</h4>
         <form class="mt-4 space-y-3" @submit.prevent="submitAddAsset">
           <select
             v-model="newAssetType"
@@ -63,7 +63,7 @@
         <p class="mt-1 text-sm text-slate-600">
           {{ pauseTargetAsset.name }}（{{ pauseTargetAsset.type === "venue" ? "空間" : "設備" }}）
         </p>
-        <p class="mt-2 text-xs text-slate-500">停用期間學生無法借用此資產，且不可與現有借用衝突。</p>
+        <p class="mt-2 text-xs text-slate-500">停用期間學生無法借用，且不可與現有借用時段衝突。</p>
         <form class="mt-4 space-y-3" @submit.prevent="submitPauseRange">
           <label class="block space-y-1 text-sm text-slate-700">
             <span class="font-medium">開始日期</span>
@@ -97,15 +97,15 @@
     <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 class="font-bold text-slate-900">資產狀態監控</h3>
-          <p class="mt-0.5 text-xs text-slate-500">即時掌握各空間／設備借用與停用狀況</p>
+          <h3 class="font-bold text-slate-900">財物狀態監控</h3>
+          <p class="mt-0.5 text-xs text-slate-500">查詢各空間／設備使用狀況</p>
         </div>
         <button
           type="button"
           class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
           @click="showAddPanel = true"
         >
-          新增資產
+          新增財物
         </button>
       </div>
 
@@ -213,7 +213,7 @@
               <dd class="font-semibold text-slate-900">{{ view.activeRecord.studentName }}（{{ view.activeRecord.studentId }}）</dd>
             </div>
             <div>
-              <dt class="text-[11px] font-semibold text-slate-500">聯絡方式</dt>
+              <dt class="text-[11px] font-semibold text-slate-500">聯絡電話</dt>
               <dd class="font-semibold text-slate-900">{{ view.activeRecord.studentPhone || "未記錄" }}</dd>
             </div>
             <div>
@@ -225,7 +225,7 @@
               <dd class="font-semibold text-slate-900">{{ view.activeRecord.mentorName }}</dd>
             </div>
             <div>
-              <dt class="text-[11px] font-semibold text-slate-500">借用期間</dt>
+              <dt class="text-[11px] font-semibold text-slate-500">借用時段</dt>
               <dd class="font-semibold text-slate-900">{{ formatBorrowPeriodZh(view.activeRecord.borrowedAt, view.activeRecord.expectedReturnAt) }}</dd>
             </div>
           </dl>

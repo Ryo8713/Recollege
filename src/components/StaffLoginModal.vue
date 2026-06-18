@@ -5,7 +5,7 @@
 		@click.self="authStore.closeStaffLoginModal"
 	>
 		<section class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-			<h3 class="text-lg font-bold text-slate-900">職員登入</h3>
+			<h3 class="text-lg font-bold text-slate-900">教職員登入</h3>
 			<form class="mt-4 space-y-3" @submit.prevent="handleLogin">
 				<input
 				v-model="authStore.staffLoginForm.account"

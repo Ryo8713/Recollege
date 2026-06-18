@@ -68,6 +68,9 @@ const VENUE_WEEKDAY_OPEN_HOUR = 17;
 const VENUE_WEEKEND_OPEN_HOUR = 8;
 const VENUE_CLOSE_HOUR = 23;
 
+// 申請需要作業時間：最早可借用日 = 從今天起算的第 N 個工作天（跳過週末與國定假日）
+const BORROW_LEAD_WORKING_DAYS = 3;
+
 function doGet(e) {
   return routeRequest_("GET", e);
 }
@@ -983,6 +986,7 @@ function createBorrowApplication_(body) {
       ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
       ensureAssetsAvailableForPeriod_(assetIds, borrowedAt, expectedReturnAt);
     }
+    ensureBorrowLeadTime_(borrowedAt);
   } else {
     borrowedAt = requireTemporalText_(body && body.borrowedAt, "borrowedAt");
     expectedReturnAt = requireTemporalText_(body && body.expectedReturnAt, "expectedReturnAt");
@@ -1982,6 +1986,33 @@ function ensureDateOnOrAfterToday_(dateText, fieldName) {
   const todayText = getTodayText_();
   if (date < todayText) {
     throw new Error(fieldName + " 需為今天或之後");
+  }
+}
+
+function getEarliestBorrowDateText_(workingDays) {
+  const holidaySet = getHolidaySet_();
+  var date = getTodayText_();
+  var count = 0;
+  for (var i = 0; i < 365; i++) {
+    if (!isHolidayLikeDate_(date, holidaySet)) {
+      count++;
+      if (count >= workingDays) return date;
+    }
+    date = addDaysText_(date, 1);
+  }
+  return date;
+}
+
+function ensureBorrowLeadTime_(borrowDate) {
+  const earliest = getEarliestBorrowDateText_(BORROW_LEAD_WORKING_DAYS);
+  if (getDatePart_(borrowDate) < earliest) {
+    throw new Error(
+      "因申請需約 " +
+        BORROW_LEAD_WORKING_DAYS +
+        " 個工作天作業時間，最早可借用日期為 " +
+        earliest +
+        "（已排除週末與國定假日）。"
+    );
   }
 }
 

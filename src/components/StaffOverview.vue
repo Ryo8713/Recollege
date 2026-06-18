@@ -68,14 +68,14 @@
             </div>
             <div v-if="rentalStore.pendingApplications.length > 0" class="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-2">
                 <label class="space-y-1 text-xs font-semibold text-slate-600">
-                    <span>資產類型篩選</span>
+                    <span>財物類型篩選</span>
                     <select
                         v-model="assetFilter"
                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none ring-blue-500 focus:ring"
                     >
                         <option value="all">全部（空間＋設備）</option>
-                        <option value="venue">只顯示空間</option>
-                        <option value="equipment">只顯示設備</option>
+                        <option value="venue">僅顯示空間</option>
+                        <option value="equipment">僅顯示設備</option>
                     </select>
                 </label>
                 <label class="space-y-1 text-xs font-semibold text-slate-600">
@@ -136,11 +136,11 @@
                         <dd class="mt-0.5 font-semibold text-slate-900">{{ app.studentName }}（{{ app.studentId }}）</dd>
                     </div>
                     <div class="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <dt class="text-xs font-semibold text-slate-500">聯絡方式</dt>
+                        <dt class="text-xs font-semibold text-slate-500">聯絡電話</dt>
                         <dd class="mt-0.5 font-semibold text-slate-900">{{ app.studentPhone }}</dd>
                     </div>
                     <div class="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <dt class="text-xs font-semibold text-slate-500">借用期間</dt>
+                        <dt class="text-xs font-semibold text-slate-500">借用時段</dt>
                         <dd class="mt-0.5 font-semibold text-slate-900">{{ formatBorrowPeriodZh(app.borrowedAt, app.expectedReturnAt) }}</dd>
                     </div>
                     <div class="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
@@ -210,11 +210,11 @@
                         <dd class="mt-0.5 font-semibold text-slate-900">{{ app.studentName }}（{{ app.studentId }}）</dd>
                     </div>
                     <div class="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <dt class="text-xs font-semibold text-slate-500">聯絡方式</dt>
+                        <dt class="text-xs font-semibold text-slate-500">聯絡電話</dt>
                         <dd class="mt-0.5 font-semibold text-slate-900">{{ app.studentPhone }}</dd>
                     </div>
                     <div class="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <dt class="text-xs font-semibold text-slate-500">借用期間</dt>
+                        <dt class="text-xs font-semibold text-slate-500">借用時段</dt>
                         <dd class="mt-0.5 font-semibold text-slate-900">{{ formatBorrowPeriodZh(app.borrowedAt, app.expectedReturnAt) }}</dd>
                     </div>
                     <div class="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
@@ -361,7 +361,7 @@
                             <dd class="mt-0.5 font-bold text-slate-950">{{ app.studentId }} / {{ app.studentName }}</dd>
                         </div>
                         <div class="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-100">
-                            <dt class="text-xs font-bold text-slate-700">聯絡方式</dt>
+                            <dt class="text-xs font-bold text-slate-700">聯絡電話</dt>
                             <dd class="mt-0.5 font-bold text-slate-950">{{ app.studentPhone }} / {{ app.studentEmail }}</dd>
                         </div>
                         <div class="rounded-lg bg-white px-3 py-2 ring-1 ring-slate-100">
@@ -539,7 +539,7 @@ type BorrowDateSortKey = "borrowedAtAsc" | "borrowedAtDesc";
 const tabs: { key: TabKey; label: string }[] = [
   { key: "approvals", label: "審核申請" },
   { key: "reviewed", label: "已審核紀錄" },
-  { key: "assets", label: "資產狀態監控" },
+  { key: "assets", label: "財物狀態監控" },
   { key: "rules", label: "借用規則" },
   { key: "overview", label: "管理總覽" },
 ];

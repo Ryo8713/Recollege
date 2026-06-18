@@ -15,7 +15,7 @@
 						class="rounded-xl bg-blue-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 active:scale-[0.99] touch-manipulation"
 						@click="authStore.openStaffLoginModal"
 					>
-						職員登入
+						教職員登入
 					</button>
 					<button
 						v-else

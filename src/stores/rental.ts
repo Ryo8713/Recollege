@@ -31,6 +31,30 @@ export function getTodayText(): string {
     );
 }
 
+export function isWeekendDateText(dateText: string): boolean {
+    const day = new Date(`${dateText}T00:00:00`).getDay();
+    return day === 0 || day === 6;
+}
+
+// 申請需要作業時間：最早可借用日 = 從今天起算的第 workingDays 個工作天
+// （跳過週末與國定假日，今天若為工作天則算第 1 天）。
+export function computeEarliestBorrowDate(
+    today: string,
+    holidayDates: Set<string>,
+    workingDays = 3,
+): string {
+    let date = today;
+    let count = 0;
+    for (let i = 0; i < 365; i += 1) {
+        if (!isWeekendDateText(date) && !holidayDates.has(date)) {
+            count += 1;
+            if (count >= workingDays) return date;
+        }
+        date = addDays(date, 1);
+    }
+    return date;
+}
+
 export function isOverdue(record: BorrowRecord): boolean {
     const today = getTodayText();
     return record.status === "租借中" && record.expectedReturnAt.slice(0, 10) < today;

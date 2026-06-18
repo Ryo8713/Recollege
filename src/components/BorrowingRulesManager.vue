@@ -3,7 +3,7 @@
     <div class="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-900">
       <p class="font-semibold">借用規則說明</p>
       <p class="mt-1 text-xs leading-relaxed text-amber-800">
-        全校暫停區間會讓所有空間與設備完全不可借；國定假日只會調整空間可借時段（08:00–23:00），設備仍依一般規則借用。
+        全校暫停區間，所有空間與設備不開放借用；國定假日僅調整空間可借用時段（08:00–23:00），設備仍依一般規則借用。
       </p>
     </div>
 

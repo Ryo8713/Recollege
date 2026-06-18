@@ -89,7 +89,7 @@
 							</p>
 							<p class="font-semibold text-slate-500">聯絡電話</p>
 							<p class="font-semibold text-slate-900">{{ form.studentPhone || "未填電話" }}</p>
-							<p class="font-semibold text-slate-500">Email</p>
+							<p class="font-semibold text-slate-500">電子郵件</p>
 							<p class="font-semibold text-slate-900">{{ form.studentEmail || "未填信箱" }}</p>
 						</div>
 					</section>
@@ -182,7 +182,7 @@
 					"
 					@click="borrowEntryMode = 'dateFirst'"
 				>
-					依日期查詢可借空間/設備
+					依日期查詢可借用空間/設備
 				</button>
 				<button
 					type="button"
@@ -194,26 +194,30 @@
 					"
 					@click="borrowEntryMode = 'assetFirst'"
 				>
-					查詢空間/設備可借日期
+					查詢空間/設備可借用日期
 				</button>
 			</div>
 
 			<div v-if="borrowEntryMode === 'dateFirst'" class="space-y-4">
 				<section class="border-b border-slate-200 pb-4">
-					<h3 class="text-sm font-semibold text-slate-800">[步驟 1]選擇欲開始借用日期</h3>
+					<h3 class="text-sm font-semibold text-slate-800">【步驟一】選擇欲開始借用之日期</h3>
+					<p class="mt-1 text-xs text-slate-500">
+						申請需約 {{ BORROW_LEAD_WORKING_DAYS }} 個工作天作業時間（已排除週末與國定假日），最早可借用日期為
+						<span class="font-semibold text-slate-700">{{ formatDateZh(earliestBorrowDate) }}</span>。
+					</p>
 					<div class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
 						<input
 							v-model="form.borrowedAt"
 							type="date"
-							:min="today"
+							:min="earliestBorrowDate"
 							class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 outline-none ring-blue-500 focus:ring"
 						/>
 					</div>
 				</section>
 
 				<section class="border-b border-slate-200 pb-4">
-					<h3 class="text-sm font-semibold text-slate-800">[步驟 2]選擇當日可借項目（空間或設備擇一）</h3>
-					<p class="mt-1 text-xs text-slate-500">單次申請只可選擇一個項目。</p>
+					<h3 class="text-sm font-semibold text-slate-800">【步驟二】選擇當日可借用項目（空間或設備擇一）</h3>
+					<p class="mt-1 text-xs text-slate-500">單次借用僅能選擇一個項目。</p>
 					<div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
 						<div class="space-y-2">
 							<p class="text-xs font-semibold text-slate-500">空間</p>
@@ -259,13 +263,14 @@
 				</section>
 
 				<section v-if="isVenueSelected" class="border-b border-slate-200 pb-4">
-					<h3 class="text-sm font-semibold text-slate-800">[步驟 3]選擇借用時段</h3>
+					<h3 class="text-sm font-semibold text-slate-800">【步驟三】選擇借用時段</h3>
+					<p class="mt-1 text-xs text-slate-500">空間僅能借用連續時段，所選時段必須前後相連。</p>
 					<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
 					<p v-else-if="venueAvailabilityLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在讀取可借時段...</p>
 					<p v-else-if="venueAvailabilityError" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ venueAvailabilityError }}</p>
 					<div v-else-if="venueAvailability && !venueAvailability.closed" class="mt-2 space-y-3">
 						<p class="text-xs font-semibold text-slate-500">
-							{{ venueAvailability.isHoliday ? "假日" : "平日" }}可借時段
+							{{ venueAvailability.isHoliday ? "假日" : "平日" }}可借用時段:
 							{{ venueAvailability.openStart }}–{{ venueAvailability.openEnd }}
 						</p>
 						<div>
@@ -286,17 +291,17 @@
 									{{ formatHourRangeLabel(hour) }}
 								</button>
 							</div>
-							<p v-else class="mt-1 text-sm text-slate-500">此日已無可借時段，請改選日期或品項。</p>
+							<p v-else class="mt-1 text-sm text-slate-500">此日已無可借時段，請改選日期或項目。</p>
 						</div>
 						<p v-if="venueDurationHours > 0" class="text-sm font-semibold text-slate-900">
 							已選 {{ venueDurationHours }} 小時：{{ selectedVenueSlotLabels.join("、") }}
 						</p>
 					</div>
-					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">此空間於所選日期不開放借用，請改選日期或品項。</p>
+					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">此空間於所選日期不開放借用，請改選日期或項目。</p>
 				</section>
 
 				<section v-else class="border-b border-slate-200 pb-4">
-					<h3 class="text-sm font-semibold text-slate-800">[步驟 3]選擇欲歸還日期</h3>
+					<h3 class="text-sm font-semibold text-slate-800">【步驟三】選擇欲歸還日期</h3>
 					<p class="mt-1 text-xs text-slate-500">最多借用 7 天（含借用當日）。</p>
 					<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
 					<p v-else-if="returnDateLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在計算可歸還日期...</p>
@@ -317,11 +322,11 @@
 							{{ formatDateZh(date) }}
 						</button>
 					</div>
-					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">此品項在目前借用日期下無可歸還日期，請改選日期或品項。</p>
+					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">此品項在目前借用日期下無可歸還日期，請改選日期或項目。</p>
 				</section>
 
 				<section class="pb-1">
-						<h3 class="text-sm font-semibold text-slate-800">[步驟 4]填寫借用資料</h3>
+						<h3 class="text-sm font-semibold text-slate-800">【步驟四】填寫借用資料</h3>
 					<div class="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
 						<label class="space-y-1 text-sm text-slate-700">
 							<span class="font-medium">學號/員編</span>
@@ -370,7 +375,7 @@
 			</div>
 
 			<div v-else class="space-y-3 border-t border-slate-200 pt-4">
-				<p class="text-sm text-slate-600">可查詢未來 30 天內的可借日期。</p>
+				<p class="text-sm text-slate-600">可查詢未來 30 天內可借用日期。</p>
 				<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 					<label class="space-y-1 text-sm text-slate-700">
 						<span class="font-medium">空間</span>
@@ -403,11 +408,11 @@
 				<p v-else-if="lookupLoading" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">查詢中...</p>
 				<div v-else-if="lookupDates.length > 0" class="space-y-4">
 					<div v-if="isLookupVenueSelected" class="space-y-3">
-						<p class="text-sm text-slate-600">以下列出未來 30 天內可借日期與可借時段，點選日期後可繼續填單。</p>
+						<p class="text-sm text-slate-600">以下列出未來 30 天內可借用日期與時段，點選日期後可繼續填單。</p>
 						<p v-if="venueLookupPreviewLoading" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在整理可借時段...</p>
 						<p v-else-if="venueLookupPreviewError" class="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ venueLookupPreviewError }}</p>
 						<section
-							v-for="preview in venueLookupPreviews"
+							v-for="preview in visibleVenueLookupPreviews"
 							:key="preview.date"
 							class="rounded-xl border border-blue-100 bg-blue-50/50 p-3"
 						>
@@ -438,7 +443,7 @@
 						</section>
 					</div>
 					<div v-else class="space-y-4">
-						<p class="text-sm text-slate-600">點選日期後會帶入借用日期，並切換到「依日期查詢可借項目」繼續填單。</p>
+						<p class="text-sm text-slate-600">點選日期後，頁面會切換至「依日期查詢可借項目」繼續填單。</p>
 						<section
 							v-for="section in lookupCalendarSections"
 							:key="section.key"
@@ -487,13 +492,13 @@
 		</div>
 
 		<div v-else class="space-y-4 p-5">
-			<p class="text-sm text-slate-500">請輸入學號查詢租借中的項目，勾選欲歸還的項目送出申請。</p>
+			<p class="text-sm text-slate-500">請輸入 學號/員編 查詢租借中的項目，勾選欲歸還的項目送出申請。</p>
 			<div class="flex gap-2">
 				<input
 					v-model.trim="returnSearchId"
 					:disabled="returnSearchLoading"
 					class="flex-1 rounded-xl border border-slate-300 px-3 py-2 outline-none ring-blue-500 focus:ring"
-					placeholder="輸入學號查詢"
+					placeholder="請輸入學號/員編"
 					@keyup.enter="searchReturn"
 				/>
 				<button
@@ -563,7 +568,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import AssetAddFeedback from "./AssetAddFeedback.vue";
 import { useBorrowAvailability } from "../composables/useBorrowAvailability";
 import { useAssetsStore } from "../stores/assets";
-import { useRentalStore, addDays, getTodayText } from "../stores/rental";
+import { useRentalStore, addDays, getTodayText, computeEarliestBorrowDate } from "../stores/rental";
 import { sheetsApi } from "../services/sheetsApi";
 import type { Asset, VenueAvailability } from "../types/rental";
 import type { ReturnSearchRecord } from "../stores/rental";
@@ -575,6 +580,12 @@ const { assets } = storeToRefs(assetsStore);
 const today = getTodayText();
 const mode = ref<"borrow" | "return">("borrow");
 const borrowEntryMode = ref<"dateFirst" | "assetFirst">("dateFirst");
+
+const BORROW_LEAD_WORKING_DAYS = 3;
+const holidayDates = ref<Set<string>>(new Set());
+const earliestBorrowDate = computed(() =>
+	computeEarliestBorrowDate(today, holidayDates.value, BORROW_LEAD_WORKING_DAYS),
+);
 
 const form = reactive({
 	studentId: "",
@@ -913,8 +924,8 @@ function validateBorrowBeforeSubmit(): boolean {
 		borrowError.value = "請先選擇借用日期。";
 		return false;
 	}
-	if (form.borrowedAt < today) {
-		borrowError.value = "借用日期需為今天或之後。";
+	if (form.borrowedAt < earliestBorrowDate.value) {
+		borrowError.value = `因申請需約 ${BORROW_LEAD_WORKING_DAYS} 個工作天作業時間，最早可借用日期為 ${formatDateZh(earliestBorrowDate.value)}（已排除週末與國定假日）。`;
 		return false;
 	}
 	if (availabilityLoading.value) {
@@ -965,6 +976,9 @@ const venueLookupPreviewLoading = ref(false);
 const venueLookupPreviewError = ref("");
 const venueLookupPreviewSeq = ref(0);
 const isLookupVenueSelected = computed(() => Boolean(selectedLookupVenueId.value));
+const visibleVenueLookupPreviews = computed(() =>
+	venueLookupPreviews.value.filter((preview) => preview.date >= earliestBorrowDate.value),
+);
 
 const lookupWeekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -1060,7 +1074,7 @@ const lookupCalendarSections = computed(() => {
 				dayCells.push({
 					date: dateText,
 					day,
-					available: availableDates.has(dateText),
+					available: availableDates.has(dateText) && dateText >= earliestBorrowDate.value,
 				});
 			}
 			while (dayCells.length % 7 !== 0) {
@@ -1193,8 +1207,18 @@ watch(
 	},
 );
 
+async function loadHolidays() {
+	try {
+		const holidays = await sheetsApi.fetchHolidays();
+		holidayDates.value = new Set(holidays.map((holiday) => holiday.date));
+	} catch {
+		// 假日讀取失敗時不阻擋借用流程，僅退回不跳過國定假日的前置天數計算。
+	}
+}
+
 onMounted(() => {
 	void syncDataVersionSnapshot();
+	void loadHolidays();
 	dataVersionPollTimer = setInterval(() => {
 		void checkRemoteDataVersion();
 	}, 30000);
