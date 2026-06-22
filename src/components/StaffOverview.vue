@@ -525,6 +525,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { useRentalStore } from "../stores/rental";
 import { useAuthStore } from "../stores/auth";
+import { formatDateZh, formatTemporalZh } from "../utils/date";
 import StaffAssetManager from "./StaffAssetManager.vue";
 import BorrowingRulesManager from "./BorrowingRulesManager.vue";
 import type { BorrowApplication } from "../types/rental";
@@ -783,31 +784,6 @@ async function handleReject(applicationId: string) {
     rejectionReasons[applicationId] || "",
   );
   delete rejectionReasons[applicationId];
-}
-
-function formatDateZh(value: string): string {
-  const text = String(value || "").trim();
-  if (!text) return "";
-
-  const plainDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  if (plainDate) {
-    const [, y, m, d] = plainDate;
-    return `${y}年${Number(m)}月${Number(d)}日`;
-  }
-
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) return text;
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatTemporalZh(value: string): string {
-  const text = String(value || "").trim();
-  const dateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(text);
-  if (dateTime) {
-    const [, y, m, d, hh, mm] = dateTime;
-    return `${y}年${Number(m)}月${Number(d)}日 ${hh}:${mm}`;
-  }
-  return formatDateZh(text);
 }
 
 function formatBorrowPeriodZh(start: string, end: string): string {

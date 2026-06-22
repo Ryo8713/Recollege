@@ -159,6 +159,117 @@
       </ul>
     </div>
 
+    <div
+      v-if="authStore.staffRole === 'admin'"
+      class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 class="font-bold text-slate-900">借用人解鎖（鎖學號）</h3>
+          <p class="mt-1 text-xs text-slate-500">
+            曾未準時歸還的學號會被限制借用。解鎖後該日（含）以前的逾期／晚還紀錄不再計入，永久有效；若日後再次違規仍會被限制。僅限管理員操作。
+          </p>
+        </div>
+        <span class="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">
+          受限 {{ restrictedStudents.length }} 人
+        </span>
+      </div>
+
+      <form class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-[200px_1fr_auto]" @submit.prevent="submitUnlock">
+        <label class="space-y-1 text-sm text-slate-700">
+          <span class="font-medium">學號</span>
+          <input
+            v-model.trim="unlockForm.studentId"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring"
+            placeholder="輸入要解鎖的學號"
+            :disabled="Boolean(unlocking)"
+          />
+        </label>
+        <label class="space-y-1 text-sm text-slate-700">
+          <span class="font-medium">備註（選填）</span>
+          <input
+            v-model.trim="unlockForm.note"
+            maxlength="60"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring"
+            placeholder="例如：已當面說明規則"
+            :disabled="Boolean(unlocking)"
+          />
+        </label>
+        <div class="flex items-end">
+          <button
+            type="submit"
+            class="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+            :disabled="Boolean(unlocking)"
+          >
+            {{ unlocking ? "解鎖中..." : "解鎖學號" }}
+          </button>
+        </div>
+      </form>
+
+      <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <div>
+          <p class="text-sm font-semibold text-slate-800">目前受限制的學號</p>
+          <p v-if="unlocksLoading" class="mt-2 text-sm text-slate-500">讀取中...</p>
+          <p v-else-if="restrictedStudents.length === 0" class="mt-2 text-sm text-slate-400">目前沒有受限制的學號。</p>
+          <ul v-else class="mt-2 space-y-2">
+            <li
+              v-for="student in restrictedStudents"
+              :key="student.studentId"
+              class="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2"
+            >
+              <div class="min-w-0">
+                <p class="truncate text-sm font-semibold text-slate-900">
+                  {{ student.studentId }}
+                  <span class="font-normal text-slate-500">{{ student.studentName }}</span>
+                </p>
+                <p v-if="student.blockStartDate" class="text-xs text-slate-500">
+                  上次解鎖：{{ formatDateZh(student.blockStartDate) }}（之後再次違規）
+                </p>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                :disabled="unlocking === student.studentId"
+                @click="unlockStudentId(student.studentId)"
+              >
+                {{ unlocking === student.studentId ? "解鎖中..." : "解鎖" }}
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <p class="text-sm font-semibold text-slate-800">已解鎖名單</p>
+          <p v-if="unlocksLoading" class="mt-2 text-sm text-slate-500">讀取中...</p>
+          <p v-else-if="studentUnlocks.length === 0" class="mt-2 text-sm text-slate-400">尚未解鎖任何學號。</p>
+          <ul v-else class="mt-2 space-y-2">
+            <li
+              v-for="unlock in studentUnlocks"
+              :key="unlock.id"
+              class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <div class="min-w-0">
+                <p class="truncate text-sm font-semibold text-slate-900">{{ unlock.studentId }}</p>
+                <p class="text-xs text-slate-500">
+                  解鎖日：{{ formatDateZh(unlock.blockStartDate) }}
+                  <span v-if="unlock.createdBy"> · 由 {{ unlock.createdBy }}</span>
+                </p>
+                <p v-if="unlock.note" class="text-xs text-slate-500">{{ unlock.note }}</p>
+              </div>
+              <button
+                type="button"
+                class="shrink-0 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+                :disabled="relocking === unlock.studentId"
+                @click="removeUnlock(unlock.studentId)"
+              >
+                {{ relocking === unlock.studentId ? "移除中..." : "移除解鎖" }}
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
     <p v-if="errorMessage" class="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
       {{ errorMessage }}
     </p>
@@ -169,13 +280,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
+import { storeToRefs } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAuthStore } from "../stores/auth";
-import { getTodayText } from "../stores/rental";
+import { useRentalStore } from "../stores/rental";
+import { formatDateZh, getTodayText } from "../utils/date";
 import type { GlobalPauseRange, Holiday } from "../types/rental";
 
 const authStore = useAuthStore();
+const rentalStore = useRentalStore();
+const { studentUnlocks } = storeToRefs(rentalStore);
 
 const holidays = ref<Holiday[]>([]);
 const globalPauses = ref<GlobalPauseRange[]>([]);
@@ -200,11 +315,31 @@ const globalPauseForm = reactive({
   note: "",
 });
 
-function formatDateZh(value: string): string {
-  const [year, month, day] = String(value || "").split("-");
-  if (!year || !month || !day) return value;
-  return `${year}年${Number(month)}月${Number(day)}日`;
-}
+const unlockForm = reactive({
+  studentId: "",
+  note: "",
+});
+const unlocking = ref("");
+const relocking = ref("");
+const unlocksLoading = ref(false);
+
+const restrictedStudents = computed(() => {
+  const processed = new Set<string>();
+  const result: { studentId: string; studentName: string; blockStartDate: string }[] = [];
+  for (const record of rentalStore.records) {
+    const id = String(record.studentId || "").trim();
+    if (!id || processed.has(id)) continue;
+    processed.add(id);
+    if (rentalStore.isStudentBorrowRestricted(id)) {
+      result.push({
+        studentId: id,
+        studentName: record.studentName || id,
+        blockStartDate: rentalStore.blockStartDateByStudent[id] ?? "",
+      });
+    }
+  }
+  return result;
+});
 
 function isActiveToday(pause: GlobalPauseRange): boolean {
   return pause.startDate <= todayText && pause.endDate >= todayText;
@@ -325,7 +460,67 @@ async function removeGlobalPause(id: string) {
   }
 }
 
+async function unlockStudentId(studentId: string, note = "") {
+  const id = String(studentId || "").trim();
+  clearMessages();
+  if (!id) {
+    errorMessage.value = "請輸入要解鎖的學號。";
+    return;
+  }
+  unlocking.value = id;
+  try {
+    await rentalStore.unlockStudent({
+      operatorAccount: authStore.staffAccount,
+      studentId: id,
+      note,
+    });
+    successMessage.value = `已解鎖學號 ${id}。`;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "解鎖失敗。";
+  } finally {
+    unlocking.value = "";
+  }
+}
+
+async function submitUnlock() {
+  const id = unlockForm.studentId.trim();
+  await unlockStudentId(id, unlockForm.note);
+  if (!errorMessage.value) {
+    unlockForm.studentId = "";
+    unlockForm.note = "";
+  }
+}
+
+async function removeUnlock(studentId: string) {
+  clearMessages();
+  relocking.value = studentId;
+  try {
+    await rentalStore.relockStudent({
+      operatorAccount: authStore.staffAccount,
+      studentId,
+    });
+    successMessage.value = `已移除學號 ${studentId} 的解鎖。`;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "移除解鎖失敗。";
+  } finally {
+    relocking.value = "";
+  }
+}
+
+async function loadUnlockData() {
+  if (authStore.staffRole !== "admin") return;
+  unlocksLoading.value = true;
+  try {
+    await Promise.all([
+      rentalStore.loadRecords({ force: true }),
+      rentalStore.loadStudentUnlocks({ force: true }),
+    ]);
+  } finally {
+    unlocksLoading.value = false;
+  }
+}
+
 onMounted(() => {
-  void Promise.all([loadHolidays(), loadGlobalPauses()]);
+  void Promise.all([loadHolidays(), loadGlobalPauses(), loadUnlockData()]);
 });
 </script>

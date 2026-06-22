@@ -246,7 +246,7 @@
                 class="font-semibold"
                 :class="range.isActiveToday ? 'text-amber-800' : 'text-slate-700'"
               >
-                {{ formatDateZh(range.startDate) }} - {{ formatDateZh(range.endDate) }}
+                {{ formatDateSlash(range.startDate) }} - {{ formatDateSlash(range.endDate) }}
               </span>
               <span v-if="range.note" class="text-slate-500">（{{ range.note }}）</span>
               <span v-if="range.isActiveToday" class="ml-1 text-amber-700">· 進行中</span>
@@ -283,7 +283,8 @@ import AssetAddFeedback from "./AssetAddFeedback.vue";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAssetsStore } from "../stores/assets";
 import { useAuthStore } from "../stores/auth";
-import { getTodayText, isOverdue, useRentalStore } from "../stores/rental";
+import { isOverdue, useRentalStore } from "../stores/rental";
+import { formatDateSlash, formatTemporalZh, getTodayText } from "../utils/date";
 import type { Asset, AssetType, BorrowRecord } from "../types/rental";
 
 type DisplayStatus = "available" | "borrowed" | "pending" | "disabled" | "paused" | "globalPaused";
@@ -630,22 +631,6 @@ async function handleDeleteAsset(asset: Asset) {
   } finally {
     deletingAssetIds.value = deletingAssetIds.value.filter((id) => id !== asset.id);
   }
-}
-
-function formatDateZh(dateText: string): string {
-  const [year, month, day] = String(dateText || "").split("-");
-  if (!year || !month || !day) return dateText;
-  return `${year}/${Number(month)}/${Number(day)}`;
-}
-
-function formatTemporalZh(value: string): string {
-  const text = String(value || "").trim();
-  const dateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(text);
-  if (dateTime) {
-    const [, y, m, d, hh, mm] = dateTime;
-    return `${y}年${Number(m)}月${Number(d)}日 ${hh}:${mm}`;
-  }
-  return formatDateZh(text);
 }
 
 function formatBorrowPeriodZh(start: string, end: string): string {

@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { sheetsApi } from "../services/sheetsApi";
-import { addDays } from "../stores/rental";
+import { addDays, getEquipmentReturnCandidateDates } from "../utils/date";
 import type { Asset, VenueAvailability } from "../types/rental";
 
 type BorrowMode = "borrow" | "return";
@@ -15,10 +15,11 @@ interface UseBorrowAvailabilityParams {
 	mode: Ref<BorrowMode>;
 	borrowEntryMode: Ref<BorrowEntryMode>;
 	today: string;
+	holidayDates: Ref<Set<string>>;
 }
 
 export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
-	const { assets, form, mode, borrowEntryMode, today } = params;
+	const { assets, form, mode, borrowEntryMode, today, holidayDates } = params;
 
 	function getAssets(): Asset[] {
 		return assets.value;
@@ -265,8 +266,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 
 		const blockedRanges = getCombinedBlockedRanges(assetId);
 		const dates: string[] = [];
-		for (let offset = 0; offset <= 6; offset += 1) {
-			const expectedReturnAt = addDays(borrowedAt, offset);
+		for (const expectedReturnAt of getEquipmentReturnCandidateDates(borrowedAt, holidayDates.value)) {
 			if (!isBlockedByRanges(borrowedAt, expectedReturnAt, blockedRanges)) {
 				dates.push(expectedReturnAt);
 			}
@@ -294,8 +294,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		borrowedAt: string,
 		ranges: Array<{ start: string; end: string }>,
 	): boolean {
-		for (let offset = 0; offset <= 6; offset += 1) {
-			const expectedReturnAt = addDays(borrowedAt, offset);
+		for (const expectedReturnAt of getEquipmentReturnCandidateDates(borrowedAt, holidayDates.value)) {
 			if (!isBlockedByRanges(borrowedAt, expectedReturnAt, ranges)) {
 				return true;
 			}

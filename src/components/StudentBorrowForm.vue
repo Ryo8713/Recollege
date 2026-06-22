@@ -18,7 +18,7 @@
 			<section class="flex w-full max-w-sm flex-col items-center rounded-2xl bg-white px-8 py-10 shadow-xl">
 				<div class="h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-slate-900" aria-hidden="true" />
 				<p class="mt-5 text-center text-base font-semibold text-slate-900">正在查詢歸還申請資料…</p>
-				<p class="mt-1 text-center text-sm text-slate-500">請稍候，系統正在讀取租借中紀錄。</p>
+				<p class="mt-1 text-center text-sm text-slate-500">請稍候</p>
 			</section>
 		</div>
 		<div
@@ -301,28 +301,19 @@
 				</section>
 
 				<section v-else class="border-b border-slate-200 pb-4">
-					<h3 class="text-sm font-semibold text-slate-800">【步驟三】選擇欲歸還日期</h3>
-					<p class="mt-1 text-xs text-slate-500">最多借用 7 天（含借用當日）。</p>
+					<h3 class="text-sm font-semibold text-slate-800">【步驟三】應歸還日期</h3>
+					<p class="mt-1 text-xs text-slate-500">設備須於借用日的下一個工作天前歸還，系統已自動為您計算應歸還日期。</p>
 					<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
-					<p v-else-if="returnDateLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在計算可歸還日期...</p>
+					<p v-else-if="returnDateLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在確認可歸還日期...</p>
 					<p v-else-if="returnDateError" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ returnDateError }}</p>
-					<div v-else-if="availableReturnDates.length > 0" class="mt-3 flex flex-wrap gap-2">
-						<button
-							v-for="date in availableReturnDates"
-							:key="date"
-							type="button"
-							class="rounded-full border px-3 py-1.5 text-sm font-medium transition"
-							:class="
-								form.expectedReturnAt === date
-									? 'border-emerald-700 bg-emerald-700 text-white'
-									: 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-							"
-							@click="form.expectedReturnAt = date"
-						>
-							{{ formatDateZh(date) }}
-						</button>
-					</div>
-					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">此品項在目前借用日期下無可歸還日期，請改選日期或項目。</p>
+					<template v-else-if="equipmentReturnDate">
+						<div class="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+							<p class="text-xs font-semibold text-emerald-700">應歸還日期</p>
+							<p class="mt-1 text-lg font-bold text-emerald-900">{{ formatDateZh(equipmentReturnDate) }}</p>
+						</div>
+					</template>
+					<p v-else-if="hasNoAvailableReturnDate" class="mt-2 text-sm text-slate-500">此品項在所選借用日期下無可歸還日期，請改選借用日期或項目。</p>
+					<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">請先選擇借用日期。</p>
 				</section>
 
 				<section class="pb-1">
@@ -363,9 +354,15 @@
 							/>
 						</label>
 					</div>
+					<p
+						v-if="form.studentId && isStudentBorrowBlocked"
+						class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
+					>
+						{{ OVERDUE_BORROW_BLOCK_MESSAGE }}
+					</p>
 					<button
 						type="button"
-						:disabled="isSubmitting || availabilityLoading || returnDateLoading"
+						:disabled="isSubmitting || availabilityLoading || returnDateLoading || isStudentBorrowBlocked"
 						class="mt-3 w-full rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
 						@click="openBorrowConfirmModal"
 					>
@@ -414,32 +411,30 @@
 						<section
 							v-for="preview in visibleVenueLookupPreviews"
 							:key="preview.date"
-							class="rounded-xl border border-blue-100 bg-blue-50/50 p-3"
+							class="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3"
 						>
-							<div class="flex flex-wrap items-center justify-between gap-2">
-								<div>
-									<h4 class="text-sm font-bold text-blue-950">{{ formatDateZh(preview.date) }}</h4>
-									<p class="text-xs font-semibold text-blue-700">
-										{{ preview.isHoliday ? "假日" : "平日" }}可借時段
-									</p>
+							<div class="min-w-0 flex-1">
+								<h4 class="text-sm font-bold text-blue-950">{{ formatDateZhWithWeekday(preview.date) }}</h4>
+								<p class="text-xs font-semibold text-blue-700">
+									{{ preview.isHoliday ? "假日" : "平日" }}可借時段
+								</p>
+								<div class="mt-2 flex flex-wrap gap-2">
+									<span
+										v-for="slot in preview.slots"
+										:key="`${preview.date}-${slot}`"
+										class="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-800"
+									>
+										{{ slot }}
+									</span>
 								</div>
-								<button
-									type="button"
-									class="rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-600"
-									@click="applySuggestedBorrowDate(preview.date)"
-								>
-									選擇
-								</button>
 							</div>
-							<div class="mt-2 flex flex-wrap gap-2">
-								<span
-									v-for="slot in preview.slots"
-									:key="`${preview.date}-${slot}`"
-									class="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-800"
-								>
-									{{ slot }}
-								</span>
-							</div>
+							<button
+								type="button"
+								class="shrink-0 self-center rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-600"
+								@click="applySuggestedBorrowDate(preview.date)"
+							>
+								選擇
+							</button>
 						</section>
 					</div>
 					<div v-else class="space-y-4">
@@ -455,11 +450,11 @@
 							</div>
 							<div class="grid grid-cols-7 gap-1">
 								<template v-for="(cell, index) in section.dayCells" :key="`${section.key}-${index}`">
-									<div v-if="!cell" class="h-10 rounded-lg" aria-hidden="true"></div>
+									<div v-if="!cell" class="h-12 rounded-lg" aria-hidden="true"></div>
 									<button
 										v-else
 										type="button"
-										class="h-10 rounded-lg border text-sm font-semibold transition"
+										class="flex h-12 flex-col items-center justify-center rounded-lg border text-sm font-semibold transition"
 										:class="
 											cell.available
 												? form.borrowedAt === cell.date
@@ -468,9 +463,11 @@
 												: 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400'
 										"
 										:disabled="!cell.available"
+										:title="formatDateZhWithWeekday(cell.date)"
 										@click="applySuggestedBorrowDate(cell.date)"
 									>
-										{{ cell.day }}
+										<span>{{ cell.day }}</span>
+										<span class="text-[10px] font-medium leading-none">{{ cell.weekday }}</span>
 									</button>
 								</template>
 							</div>
@@ -568,7 +565,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import AssetAddFeedback from "./AssetAddFeedback.vue";
 import { useBorrowAvailability } from "../composables/useBorrowAvailability";
 import { useAssetsStore } from "../stores/assets";
-import { useRentalStore, addDays, getTodayText, computeEarliestBorrowDate } from "../stores/rental";
+import { OVERDUE_BORROW_BLOCK_MESSAGE, studentHasOverdueBorrowRestriction, useRentalStore } from "../stores/rental";
+import { computeEarliestBorrowDate, computeNextWorkingDay, formatDateZh, formatDateZhWithWeekday, formatTemporalZh, getTodayText, getWeekdayLabel, isWorkingDayText, WEEKDAY_LABELS } from "../utils/date";
 import { sheetsApi } from "../services/sheetsApi";
 import type { Asset, VenueAvailability } from "../types/rental";
 import type { ReturnSearchRecord } from "../stores/rental";
@@ -576,6 +574,8 @@ import type { ReturnSearchRecord } from "../stores/rental";
 const assetsStore = useAssetsStore();
 const rentalStore = useRentalStore();
 const { assets } = storeToRefs(assetsStore);
+const { records: borrowRecords } = storeToRefs(rentalStore);
+const lookupWeekdayLabels = WEEKDAY_LABELS;
 
 const today = getTodayText();
 const mode = ref<"borrow" | "return">("borrow");
@@ -660,6 +660,7 @@ const {
 	mode,
 	borrowEntryMode,
 	today,
+	holidayDates,
 });
 
 const isVenueSelected = computed(() => selectedAssetType.value === "venue");
@@ -763,35 +764,63 @@ const borrowDurationDays = computed(() => {
 	return diff > 0 ? diff : 0;
 });
 
+// 設備理想歸還日 = 借用日的下一個工作天（跳過週末與國定假日）。
+const idealReturnDate = computed(() => {
+	if (isVenueSelected.value || !form.borrowedAt) return "";
+	return computeNextWorkingDay(form.borrowedAt, holidayDates.value);
+});
+
+// 系統依借用日自動推算應歸還日期：
+// 預設為下一個工作天；若該日前已被借用或落在暫停區間，則自動往前縮到「不超過理想歸還日的最近可歸還工作天」。
+const equipmentReturnDate = computed(() => {
+	if (!idealReturnDate.value) return "";
+	const candidates = availableReturnDates.value
+		.filter(
+			(date) =>
+				date <= idealReturnDate.value &&
+				isWorkingDayText(date, holidayDates.value),
+		)
+		.sort();
+	if (candidates.length === 0) return "";
+	return candidates[candidates.length - 1];
+});
+
+// 應歸還日因衝突而被提前（早於理想的下一個工作天）。
+const isEquipmentReturnDateAdjusted = computed(
+	() =>
+		Boolean(equipmentReturnDate.value) &&
+		Boolean(idealReturnDate.value) &&
+		equipmentReturnDate.value < idealReturnDate.value,
+);
+
+// 所選借用日下，該設備完全沒有可歸還日期。
+const hasNoAvailableReturnDate = computed(() => {
+	if (isVenueSelected.value || !selectedAssetId.value || !form.borrowedAt) return false;
+	if (returnDateLoading.value || returnDateError.value) return false;
+	return !equipmentReturnDate.value;
+});
+
+const isStudentBorrowBlocked = computed(() =>
+	studentHasOverdueBorrowRestriction(
+		form.studentId,
+		borrowRecords.value,
+		rentalStore.blockStartDateByStudent,
+	),
+);
+
+watch(
+	[equipmentReturnDate, isVenueSelected, () => selectedAssetId.value],
+	() => {
+		if (isVenueSelected.value || !selectedAssetId.value) return;
+		form.expectedReturnAt = equipmentReturnDate.value;
+	},
+	{ immediate: true },
+);
+
 function buildItemName(): string {
 	if (!selectedAssetId.value || !selectedAssetName.value || !selectedAssetType.value) return "";
 	const label = selectedAssetType.value === "venue" ? "空間" : "設備";
 	return `${label}:${selectedAssetName.value}`;
-}
-
-function formatDateZh(value: string): string {
-	const text = String(value || "").trim();
-	if (!text) return "";
-
-	const plainDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-	if (plainDate) {
-		const [, y, m, d] = plainDate;
-		return `${y}年${Number(m)}月${Number(d)}日`;
-	}
-
-	const date = new Date(text);
-	if (Number.isNaN(date.getTime())) return text;
-	return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatTemporalZh(value: string): string {
-	const text = String(value || "").trim();
-	const dateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(text);
-	if (dateTime) {
-		const [, y, m, d, hh, mm] = dateTime;
-		return `${y}年${Number(m)}月${Number(d)}日 ${hh}:${mm}`;
-	}
-	return formatDateZh(text);
 }
 
 async function syncDataVersionSnapshot() {
@@ -834,6 +863,7 @@ async function refreshLatestData() {
 		await Promise.all([
 			assetsStore.loadAssets({ force: true }),
 			rentalStore.loadRecords({ force: true }),
+			rentalStore.loadStudentUnlocks({ force: true }),
 		]);
 		await refreshBorrowAvailability();
 		if (returnSearchId.value) {
@@ -916,6 +946,10 @@ function validateBorrowBeforeSubmit(): boolean {
 		borrowError.value = "請填寫完整的借用人資訊。";
 		return false;
 	}
+	if (isStudentBorrowBlocked.value) {
+		borrowError.value = OVERDUE_BORROW_BLOCK_MESSAGE;
+		return false;
+	}
 	if (!form.borrowerGroup || !form.activityName) {
 		borrowError.value = "請填寫借用團體與活動名稱。";
 		return false;
@@ -944,14 +978,12 @@ function validateBorrowBeforeSubmit(): boolean {
 		}
 		return true;
 	}
-	if (!form.expectedReturnAt) {
-		borrowError.value = "請先選擇可歸還日期。";
+	if (hasNoAvailableReturnDate.value) {
+		borrowError.value = "此品項在所選借用日期下無可歸還日期，請改選借用日期或項目。";
 		return false;
 	}
-	const min = addDays(form.borrowedAt, 0);
-	const max = addDays(form.borrowedAt, 6);
-	if (form.expectedReturnAt < min || form.expectedReturnAt > max) {
-		borrowError.value = "歸還日期需在借用日期當天起，且最多借用 7 天。";
+	if (!form.expectedReturnAt) {
+		borrowError.value = "系統尚未計算出應歸還日期，請稍候或重新選擇借用日期。";
 		return false;
 	}
 	return true;
@@ -959,8 +991,10 @@ function validateBorrowBeforeSubmit(): boolean {
 
 function openBorrowConfirmModal() {
 	borrowError.value = "";
-	if (!validateBorrowBeforeSubmit()) return;
-	showBorrowConfirmModal.value = true;
+	void Promise.all([rentalStore.loadRecords(), rentalStore.loadStudentUnlocks()]).then(() => {
+		if (!validateBorrowBeforeSubmit()) return;
+		showBorrowConfirmModal.value = true;
+	});
 }
 
 const returnSearchId = ref("");
@@ -979,8 +1013,6 @@ const isLookupVenueSelected = computed(() => Boolean(selectedLookupVenueId.value
 const visibleVenueLookupPreviews = computed(() =>
 	venueLookupPreviews.value.filter((preview) => preview.date >= earliestBorrowDate.value),
 );
-
-const lookupWeekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
 function getAvailableSlotLabels(availability: VenueAvailability): string[] {
 	if (availability.closed) return [];
@@ -1065,7 +1097,7 @@ const lookupCalendarSections = computed(() => {
 			const firstWeekday = new Date(year, month - 1, 1).getDay();
 			const daysInMonth = new Date(year, month, 0).getDate();
 			const availableDates = new Set(dates);
-			const dayCells: Array<{ date: string; day: number; available: boolean } | null> = [];
+			const dayCells: Array<{ date: string; day: number; weekday: string; available: boolean } | null> = [];
 			for (let i = 0; i < firstWeekday; i += 1) {
 				dayCells.push(null);
 			}
@@ -1074,6 +1106,7 @@ const lookupCalendarSections = computed(() => {
 				dayCells.push({
 					date: dateText,
 					day,
+					weekday: getWeekdayLabel(dateText),
 					available: availableDates.has(dateText) && dateText >= earliestBorrowDate.value,
 				});
 			}
@@ -1219,6 +1252,8 @@ async function loadHolidays() {
 onMounted(() => {
 	void syncDataVersionSnapshot();
 	void loadHolidays();
+	void rentalStore.loadRecords();
+	void rentalStore.loadStudentUnlocks();
 	dataVersionPollTimer = setInterval(() => {
 		void checkRemoteDataVersion();
 	}, 30000);

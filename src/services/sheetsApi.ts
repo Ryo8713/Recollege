@@ -7,6 +7,7 @@ import type {
     GlobalPauseRange,
     StaffAccountSummary,
     StaffRole,
+    StudentUnlock,
     VenueAvailability,
 } from "../types/rental";
 
@@ -216,6 +217,32 @@ export const sheetsApi = {
 
     async deleteGlobalPauseRange(payload: { operatorAccount: string; id: string }): Promise<{ ok: boolean; id: string }> {
         return request("global-pause-deletes", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async fetchStudentUnlocks(): Promise<StudentUnlock[]> {
+        return request<StudentUnlock[]>("student-unlocks");
+    },
+
+    async createStudentUnlock(payload: {
+        operatorAccount: string;
+        studentId: string;
+        note?: string;
+    }): Promise<StudentUnlock & { ok: boolean }> {
+        return request("student-unlocks", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
+    },
+
+    async deleteStudentUnlock(payload: {
+        operatorAccount: string;
+        studentId?: string;
+        id?: string;
+    }): Promise<{ ok: boolean; studentId: string }> {
+        return request("student-unlock-deletes", {
             method: "POST",
             body: JSON.stringify(payload),
         });

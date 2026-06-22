@@ -2,75 +2,42 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAssetsStore } from "./assets";
-import type { BorrowApplication, BorrowRecord } from "../types/rental";
+import { getTodayText } from "../utils/date";
+import {
+    hasOverdueBorrowRestriction,
+    isOverdue,
+    OVERDUE_BORROW_BLOCK_MESSAGE,
+    studentHasOverdueBorrowRestriction,
+    wasReturnedLate,
+} from "../utils/borrowRestrictions";
+import type { BorrowApplication, BorrowRecord, StudentUnlock } from "../types/rental";
 
 export interface ReturnSearchRecord extends BorrowRecord {
     returnPending: boolean;
 }
 
-export function addDays(dateText: string, days: number): string {
-    const date = new Date(`${dateText}T00:00:00`);
-    date.setDate(date.getDate() + days);
-    return (
-        date.getFullYear() +
-        "-" +
-        String(date.getMonth() + 1).padStart(2, "0") +
-        "-" +
-        String(date.getDate()).padStart(2, "0")
-    );
-}
-
-export function getTodayText(): string {
-    const now = new Date();
-    return (
-        now.getFullYear() +
-        "-" +
-        String(now.getMonth() + 1).padStart(2, "0") +
-        "-" +
-        String(now.getDate()).padStart(2, "0")
-    );
-}
-
-export function isWeekendDateText(dateText: string): boolean {
-    const day = new Date(`${dateText}T00:00:00`).getDay();
-    return day === 0 || day === 6;
-}
-
-// 申請需要作業時間：最早可借用日 = 從今天起算的第 workingDays 個工作天
-// （跳過週末與國定假日，今天若為工作天則算第 1 天）。
-export function computeEarliestBorrowDate(
-    today: string,
-    holidayDates: Set<string>,
-    workingDays = 3,
-): string {
-    let date = today;
-    let count = 0;
-    for (let i = 0; i < 365; i += 1) {
-        if (!isWeekendDateText(date) && !holidayDates.has(date)) {
-            count += 1;
-            if (count >= workingDays) return date;
-        }
-        date = addDays(date, 1);
-    }
-    return date;
-}
-
-export function isOverdue(record: BorrowRecord): boolean {
-    const today = getTodayText();
-    return record.status === "租借中" && record.expectedReturnAt.slice(0, 10) < today;
-}
+export {
+    hasOverdueBorrowRestriction,
+    isOverdue,
+    OVERDUE_BORROW_BLOCK_MESSAGE,
+    studentHasOverdueBorrowRestriction,
+    wasReturnedLate,
+} from "../utils/borrowRestrictions";
 
 export const useRentalStore = defineStore("rental", () => {
     const assetsStore = useAssetsStore();
 
     const applications = ref<BorrowApplication[]>([]);
     const records = ref<BorrowRecord[]>([]);
+    const studentUnlocks = ref<StudentUnlock[]>([]);
     const loading = ref(false);
     const loadError = ref("");
     const loadedApplicationsAt = ref(0);
     const loadedRecordsAt = ref(0);
+    const loadedUnlocksAt = ref(0);
     const inFlightApplicationsLoad = ref<Promise<void> | null>(null);
     const inFlightRecordsLoad = ref<Promise<void> | null>(null);
+    const inFlightUnlocksLoad = ref<Promise<void> | null>(null);
     const LOAD_TTL_MS = 60 * 1000;
     const reviewError = ref("");
     const reviewingApplicationIds = ref<string[]>([]);
@@ -80,6 +47,23 @@ export const useRentalStore = defineStore("rental", () => {
     );
     const activeRecords = computed(() => records.value.filter((r) => r.status === "租借中"));
     const overdueRecords = computed(() => activeRecords.value.filter((r) => isOverdue(r)));
+
+    // 學號 -> 開始封鎖日期（取最新一筆解鎖）。
+    const blockStartDateByStudent = computed(() => {
+        const map: Record<string, string> = {};
+        for (const unlock of studentUnlocks.value) {
+            const id = unlock.studentId.trim();
+            if (!id) continue;
+            if (!map[id] || unlock.blockStartDate > map[id]) {
+                map[id] = unlock.blockStartDate;
+            }
+        }
+        return map;
+    });
+
+    function isStudentBorrowRestricted(studentId: string): boolean {
+        return studentHasOverdueBorrowRestriction(studentId, records.value, blockStartDateByStudent.value);
+    }
 
     function beginReview(applicationId: string) {
         if (!reviewingApplicationIds.value.includes(applicationId)) {
@@ -155,6 +139,38 @@ export const useRentalStore = defineStore("rental", () => {
         return inFlightRecordsLoad.value;
     }
 
+    async function loadStudentUnlocks(options?: { force?: boolean }) {
+        const force = Boolean(options?.force);
+        if (inFlightUnlocksLoad.value) {
+            return inFlightUnlocksLoad.value;
+        }
+        if (!shouldLoadByTimestamp(loadedUnlocksAt.value, force)) {
+            return;
+        }
+
+        inFlightUnlocksLoad.value = (async () => {
+            try {
+                studentUnlocks.value = await sheetsApi.fetchStudentUnlocks();
+                loadedUnlocksAt.value = Date.now();
+            } catch {
+                // 解鎖名單讀取失敗時不阻擋借用流程，僅退回為「無解鎖」狀態。
+            } finally {
+                inFlightUnlocksLoad.value = null;
+            }
+        })();
+        return inFlightUnlocksLoad.value;
+    }
+
+    async function unlockStudent(payload: { operatorAccount: string; studentId: string; note?: string }) {
+        await sheetsApi.createStudentUnlock(payload);
+        await loadStudentUnlocks({ force: true });
+    }
+
+    async function relockStudent(payload: { operatorAccount: string; studentId?: string; id?: string }) {
+        await sheetsApi.deleteStudentUnlock(payload);
+        await loadStudentUnlocks({ force: true });
+    }
+
     async function submitBorrowApplication(payload: {
         studentId: string;
         studentName: string;
@@ -168,6 +184,11 @@ export const useRentalStore = defineStore("rental", () => {
         borrowedAt: string;
         expectedReturnAt: string;
     }) {
+        await Promise.all([loadRecords(), loadStudentUnlocks()]);
+        if (isStudentBorrowRestricted(payload.studentId)) {
+            throw new Error(OVERDUE_BORROW_BLOCK_MESSAGE);
+        }
+
         const appPayload = { ...payload, type: "借用申請" as const };
         const { applicationId } = await sheetsApi.createBorrowApplication(appPayload);
 
@@ -401,6 +422,7 @@ export const useRentalStore = defineStore("rental", () => {
     return {
         applications,
         records,
+        studentUnlocks,
         loading,
         loadError,
         loadedApplicationsAt,
@@ -410,10 +432,18 @@ export const useRentalStore = defineStore("rental", () => {
         pendingApplications,
         activeRecords,
         overdueRecords,
-        addDays,
+        blockStartDateByStudent,
         isOverdue,
+        wasReturnedLate,
+        hasOverdueBorrowRestriction,
+        studentHasOverdueBorrowRestriction,
+        isStudentBorrowRestricted,
+        OVERDUE_BORROW_BLOCK_MESSAGE,
         loadApplications,
         loadRecords,
+        loadStudentUnlocks,
+        unlockStudent,
+        relockStudent,
         submitBorrowApplication,
         approveApplication,
         rejectApplication,

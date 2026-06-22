@@ -5,10 +5,12 @@ const SHEET_BORROW_RECORDS = "borrow_records";
 const SHEET_STAFF_ACCOUNTS = "staff_accounts";
 const SHEET_HOLIDAYS = "holidays";
 const SHEET_GLOBAL_PAUSES = "global_pause_ranges";
+const SHEET_STUDENT_UNLOCKS = "student_borrow_unlocks";
 const ASSET_HEADERS = ["id", "name", "type", "status", "createdAt"];
 const ASSET_PAUSE_HEADERS = ["id", "assetId", "startDate", "endDate", "note", "createdAt"];
 const HOLIDAY_HEADERS = ["date", "note", "createdAt", "createdBy"];
 const GLOBAL_PAUSE_HEADERS = ["id", "startDate", "endDate", "note", "createdAt", "createdBy"];
+const STUDENT_UNLOCK_HEADERS = ["id", "studentId", "blockStartDate", "note", "createdAt", "createdBy"];
 const BORROW_APPLICATION_HEADERS = [
   "id",
   "type",
@@ -60,7 +62,6 @@ const APP_TIME_ZONE = "Asia/Taipei";
 const DATE_TEXT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME_TEXT_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 const DATA_VERSION_KEY = "dataVersion";
-const FAR_FUTURE_BLOCKED_END_DATE = "9999-12-31";
 
 // 空間（venue）以小時計的營業時段（24 小時制整點）
 // 平日：可借 1700-2300；假日／國定假日：可借 0800-2300
@@ -109,6 +110,10 @@ function routeRequest_(method, e) {
 
     if (path === "global-pauses" && method === "GET") {
       return jsonResponse_(readGlobalPauseRanges_());
+    }
+
+    if (path === "student-unlocks" && method === "GET") {
+      return jsonResponse_(readStudentUnlocks_());
     }
 
     if (path === "venue-availability" && method === "GET") {
@@ -184,6 +189,16 @@ function routeRequest_(method, e) {
     if (path === "global-pause-deletes" && method === "POST") {
       const body = parseBody_(e);
       return jsonResponse_(deleteGlobalPauseRange_(body));
+    }
+
+    if (path === "student-unlocks" && method === "POST") {
+      const body = parseBody_(e);
+      return jsonResponse_(createStudentUnlock_(body));
+    }
+
+    if (path === "student-unlock-deletes" && method === "POST") {
+      const body = parseBody_(e);
+      return jsonResponse_(deleteStudentUnlock_(body));
     }
 
     if (path === "staff-accounts" && method === "POST") {
@@ -277,6 +292,12 @@ function getGlobalPauseSheet_() {
 function getStaffAccountsSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_STAFF_ACCOUNTS, STAFF_ACCOUNT_HEADERS);
   ensureDefaultStaffAccount_(sheet);
+  return sheet;
+}
+
+function getStudentUnlocksSheet_() {
+  const sheet = getSheetWithHeaders_(SHEET_STUDENT_UNLOCKS, STUDENT_UNLOCK_HEADERS);
+  ensureColumnAsDateText_(sheet, 3); // blockStartDate
   return sheet;
 }
 
@@ -965,6 +986,7 @@ function createBorrowApplication_(body) {
   let expectedReturnAt;
 
   if (type === "借用申請") {
+    ensureStudentEligibleForBorrow_(studentId);
     if (!borrowerGroup) {
       throw new Error("borrowerGroup 為必填");
     }
@@ -1073,18 +1095,15 @@ function listAvailableAssetsByStartDate_(borrowedAt) {
 
     const blockedRanges = getAssetBlockedRanges_(asset.id, blockedRangeMap);
     const globalPauseRanges = getGlobalPauseRanges_();
-    let hasAvailableReturnDate = false;
-    for (var offset = 0; offset <= 6; offset++) {
-      const expectedReturnAt = addDaysText_(borrowedAt, offset);
-      if (isBlockedByRanges_(borrowedAt, expectedReturnAt, globalPauseRanges)) continue;
-      if (!isBlockedByRanges_(borrowedAt, expectedReturnAt, blockedRanges)) {
-        hasAvailableReturnDate = true;
-        break;
-      }
+    if (
+      hasAnyAvailableReturnDate_(
+        borrowedAt,
+        blockedRanges,
+        globalPauseRanges
+      )
+    ) {
+      equipments.push(asset);
     }
-
-    if (!hasAvailableReturnDate) continue;
-    equipments.push(asset);
   }
 
   return { venues: venues, equipments: equipments };
@@ -1183,17 +1202,7 @@ function listAssetAvailableDates_(assetId, fromDate, windowDays) {
   for (var day = 0; day < windowDays; day++) {
     const startDate = addDaysText_(fromDate, day);
     if (isGloballyClosedDate_(startDate, globalPauseRanges)) continue;
-    var hasAvailableReturnDate = false;
-    for (var offset = 0; offset <= 6; offset++) {
-      const expectedReturnAt = addDaysText_(startDate, offset);
-      if (isBlockedByRanges_(startDate, expectedReturnAt, globalPauseRanges)) continue;
-      if (!isBlockedByRanges_(startDate, expectedReturnAt, blockedRanges)) {
-        hasAvailableReturnDate = true;
-        break;
-      }
-    }
-
-    if (hasAvailableReturnDate) {
+    if (hasAnyAvailableReturnDate_(startDate, blockedRanges, globalPauseRanges)) {
       dates.push(startDate);
     }
   }
@@ -1227,8 +1236,9 @@ function listAvailableReturnDates_(assetId, borrowedAt) {
   const blockedRanges = getAssetBlockedRanges_(assetId);
   const globalPauseRanges = getGlobalPauseRanges_();
   const dates = [];
-  for (var offset = 0; offset <= 6; offset++) {
-    const expectedReturnAt = addDaysText_(borrowedAt, offset);
+  var candidateDates = getEquipmentReturnCandidateDates_(borrowedAt);
+  for (var c = 0; c < candidateDates.length; c++) {
+    var expectedReturnAt = candidateDates[c];
     if (isBlockedByRanges_(borrowedAt, expectedReturnAt, globalPauseRanges)) continue;
     if (!isBlockedByRanges_(borrowedAt, expectedReturnAt, blockedRanges)) {
       dates.push(expectedReturnAt);
@@ -1361,10 +1371,196 @@ function getPauseRangesByAssetId_() {
 }
 
 function getEffectiveBlockedRangeEndDate_(recordStatus, expectedReturnAt, todayText) {
-  if (recordStatus === "租借中" && expectedReturnAt < todayText) {
-    return FAR_FUTURE_BLOCKED_END_DATE;
-  }
+  // 借用皆為預約未來區間，逾期未還不再封鎖未來日期。
+  // 占用範圍一律以實際借用區間 [borrowedAt, expectedReturnAt] 計算，
+  // 是否可借僅取決於所選日期是否與既有紀錄重疊。
   return expectedReturnAt;
+}
+
+function isRecordCurrentlyOverdue_(status, expectedReturnAt, todayText) {
+  if (status !== "租借中") return false;
+  const dueDate = getDatePart_(normalizeTemporalText_(expectedReturnAt));
+  if (!dueDate) return false;
+  return dueDate < todayText;
+}
+
+function wasRecordReturnedLate_(status, expectedReturnAt, returnedAt) {
+  if (status !== "已歸還") return false;
+  const returnedDate = getDatePart_(normalizeDateText_(returnedAt));
+  const dueDate = getDatePart_(normalizeTemporalText_(expectedReturnAt));
+  if (!returnedDate || !dueDate) return false;
+  return returnedDate > dueDate;
+}
+
+function studentHasOverdueBorrowRestriction_(studentId) {
+  const normalizedId = String(studentId || "").trim();
+  if (!normalizedId) return false;
+
+  const todayText = getTodayText_();
+  // 解鎖紀錄的「開始封鎖日期」：此日期（含）以前的逾期／晚還一律不計入；之後的新違規才會再次封鎖。
+  // 未解鎖者為空字串，任何違規日期皆 > "" → 仍受限制（維持原行為）。
+  const blockStartDate = getStudentBlockStartDate_(normalizedId);
+  const sheet = getBorrowRecordsSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+
+  const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    const rowStudentId = String(rows[i][1] || "").trim();
+    if (rowStudentId !== normalizedId) continue;
+
+    const status = String(rows[i][10] || "").trim();
+    const expectedReturnAt = normalizeTemporalText_(rows[i][8]);
+    const returnedAt = normalizeDateText_(rows[i][9]);
+    if (isRecordCurrentlyOverdue_(status, expectedReturnAt, todayText)) {
+      if (getDatePart_(expectedReturnAt) > blockStartDate) return true;
+    }
+    if (wasRecordReturnedLate_(status, expectedReturnAt, returnedAt)) {
+      if (getDatePart_(returnedAt) > blockStartDate) return true;
+    }
+  }
+  return false;
+}
+
+function readStudentUnlocks_() {
+  const sheet = getStudentUnlocksSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const rows = sheet.getRange(2, 1, lastRow - 1, STUDENT_UNLOCK_HEADERS.length).getValues();
+  const list = [];
+  for (var i = 0; i < rows.length; i++) {
+    const id = String(rows[i][0] || "").trim();
+    const unlockStudentId = String(rows[i][1] || "").trim();
+    if (!id || !unlockStudentId) continue;
+    list.push({
+      id: id,
+      studentId: unlockStudentId,
+      blockStartDate: normalizeDateText_(rows[i][2]),
+      note: String(rows[i][3] || "").trim(),
+      createdAt: String(rows[i][4] || "").trim(),
+      createdBy: String(rows[i][5] || "").trim(),
+    });
+  }
+  list.sort(function (a, b) {
+    return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
+  });
+  return list;
+}
+
+// 取該學號最新一筆解鎖的「開始封鎖日期」；無解鎖紀錄則回傳空字串。
+function getStudentBlockStartDate_(studentId) {
+  const normalizedId = String(studentId || "").trim();
+  if (!normalizedId) return "";
+  const unlocks = readStudentUnlocks_();
+  var latest = "";
+  for (var i = 0; i < unlocks.length; i++) {
+    if (unlocks[i].studentId !== normalizedId) continue;
+    if (unlocks[i].blockStartDate > latest) latest = unlocks[i].blockStartDate;
+  }
+  return latest;
+}
+
+function ensureOperatorIsAdmin_(operatorAccount) {
+  const operator = findStaffAccount_(operatorAccount);
+  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+    throw new Error("職員帳號驗證失敗。");
+  }
+  if (operator.role !== "admin") {
+    throw new Error("僅限管理員操作此功能。");
+  }
+  return operator;
+}
+
+function createStudentUnlock_(body) {
+  const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
+  const operator = ensureOperatorIsAdmin_(operatorAccount);
+  const studentId = String((body && body.studentId) || "").trim();
+  if (!studentId) {
+    throw new Error("studentId 為必填");
+  }
+  const note = String((body && body.note) || "").trim();
+  if (note.length > 60) {
+    throw new Error("note 最多 60 字");
+  }
+
+  // 解鎖當日設為「開始封鎖日期」：此日（含）以前的違規不再計入，永久有效（無到期日）。
+  const blockStartDate = getTodayText_();
+  const sheet = getStudentUnlocksSheet_();
+  const lastRow = sheet.getLastRow();
+
+  // 同一學號僅保留一筆解鎖紀錄，重複解鎖時更新為最新的開始封鎖日期。
+  if (lastRow >= 2) {
+    const rows = sheet.getRange(2, 1, lastRow - 1, STUDENT_UNLOCK_HEADERS.length).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][1] || "").trim() === studentId) {
+        const rowIndex = i + 2;
+        const createdAt = new Date().toISOString();
+        sheet.getRange(rowIndex, 3).setValue(blockStartDate);
+        sheet.getRange(rowIndex, 4).setValue(note);
+        sheet.getRange(rowIndex, 5).setValue(createdAt);
+        sheet.getRange(rowIndex, 6).setValue(operator.account);
+        bumpDataVersion_();
+        return {
+          ok: true,
+          id: String(rows[i][0] || "").trim(),
+          studentId: studentId,
+          blockStartDate: blockStartDate,
+          note: note,
+          createdAt: createdAt,
+          createdBy: operator.account,
+        };
+      }
+    }
+  }
+
+  const id = "unlock-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+  const createdAt = new Date().toISOString();
+  sheet.appendRow([id, studentId, blockStartDate, note, createdAt, operator.account]);
+  bumpDataVersion_();
+  return {
+    ok: true,
+    id: id,
+    studentId: studentId,
+    blockStartDate: blockStartDate,
+    note: note,
+    createdAt: createdAt,
+    createdBy: operator.account,
+  };
+}
+
+function deleteStudentUnlock_(body) {
+  const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
+  ensureOperatorIsAdmin_(operatorAccount);
+  const studentId = String((body && body.studentId) || "").trim();
+  const id = String((body && body.id) || "").trim();
+  if (!studentId && !id) {
+    throw new Error("studentId 或 id 為必填");
+  }
+
+  const sheet = getStudentUnlocksSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    throw new Error("找不到解鎖紀錄");
+  }
+  const rows = sheet.getRange(2, 1, lastRow - 1, STUDENT_UNLOCK_HEADERS.length).getValues();
+  for (var i = rows.length - 1; i >= 0; i--) {
+    const matchId = id && String(rows[i][0] || "").trim() === id;
+    const matchStudent = studentId && String(rows[i][1] || "").trim() === studentId;
+    if (matchId || matchStudent) {
+      sheet.deleteRow(i + 2);
+      bumpDataVersion_();
+      return { ok: true, id: id, studentId: studentId };
+    }
+  }
+  throw new Error("找不到解鎖紀錄");
+}
+
+function ensureStudentEligibleForBorrow_(studentId) {
+  if (studentHasOverdueBorrowRestriction_(studentId)) {
+    throw new Error(
+      "您目前有逾期或未準時歸還的借用紀錄，暫無法提出借用申請。請先完成歸還並洽詢服務台。"
+    );
+  }
 }
 
 function isBlockedByRanges_(startDate, endDate, ranges) {
@@ -1598,6 +1794,8 @@ function reviewBorrowApplication_(body) {
   let linkedRecordId = String(row[14] || "").trim();
   if (appType === "借用申請") {
     if (action === "approve") {
+      ensureStudentEligibleForBorrow_(String(row[2] || "").trim());
+      ensureApplicationStillBookable_(row);
       linkedRecordId = createBorrowRecordFromApplicationRow_(row);
       row[14] = linkedRecordId;
     }
@@ -1628,93 +1826,26 @@ function reviewBorrowApplication_(body) {
   };
 }
 
-function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
-  const appType = String(appRow[1] || "").trim();
-  const studentId = String(appRow[2] || "").trim();
-  const studentName = String(appRow[3] || "").trim();
-  const studentEmail = String(appRow[5] || "").trim();
-  const itemName = String(appRow[6] || "").trim();
+function ensureApplicationStillBookable_(appRow) {
+  const assetIds = parseStringArray_(appRow[7]);
+  if (assetIds.length === 0) {
+    throw new Error("申請缺少借用項目，無法核准。");
+  }
   const borrowedAt = normalizeTemporalText_(appRow[8]);
   const expectedReturnAt = normalizeTemporalText_(appRow[9]);
-  const borrowerGroup = String(appRow[15] || "").trim();
-  const mentorName = String(appRow[16] || "").trim();
-  const activityName = String(appRow[17] || "").trim();
-  const rejectionReason = String(appRow[18] || "").trim();
+  const assetTypeMap = getAssetTypeMap_();
+  const primaryAssetType = assetTypeMap[assetIds[0]];
 
-  if (!studentEmail) return;
-
-  const subject = "【住宿書院管理系統】" + appType + nextStatus;
-  const resultText = nextStatus === "已核准" ? "已核准" : "已駁回";
-  const rejectionReasonLine =
-    nextStatus === "已駁回" ? "駁回原因：" + (rejectionReason || "未填寫") + "\n" : "";
-  const body =
-    (studentName || "同學") +
-    " 您好：\n\n" +
-    "您的" +
-    appType +
-    resultText +
-    "。\n\n" +
-    rejectionReasonLine +
-    "借用項目：" +
-    formatItemNameForEmail_(itemName) +
-    "\n" +
-    "借用期間：" +
-    formatReviewPeriodForEmail_(borrowedAt, expectedReturnAt) +
-    "\n" +
-    "借用人：" +
-    (studentName || "未填寫") +
-    "（" +
-    (studentId || "未填寫") +
-    "）" +
-    "\n" +
-    "活動名稱：" +
-    (activityName || "未填寫") +
-    "\n" +
-    "借用團體：" +
-    (borrowerGroup || "未填寫") +
-    "\n" +
-    (mentorName ? "負責導師：" + mentorName + "\n" : "") +
-    "\n" +
-    "如有疑問，請洽住宿書院管理人員。";
-
-  MailApp.sendEmail(studentEmail, subject, body);
-}
-
-function formatItemNameForEmail_(itemName) {
-  return String(itemName || "").replace(/^(空間|場地|設備|器材)\s*[:：]\s*/, "").trim() || "未記錄";
-}
-
-function formatReviewPeriodForEmail_(start, end) {
-  const startText = String(start || "").trim();
-  const endText = String(end || "").trim();
-  const startDateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(startText);
-  const endDateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(endText);
-  if (startDateTime && endDateTime && startText.slice(0, 10) === endText.slice(0, 10)) {
-    return (
-      formatDateForEmail_(startText.slice(0, 10)) +
-      " " +
-      startDateTime[4] +
-      " - " +
-      endDateTime[4]
-    );
+  // 重新確認所選借用區間是否仍與既有紀錄重疊（避免多筆相同區間申請同時核准造成衝突）。
+  if (primaryAssetType === "venue") {
+    validateVenueBooking_(assetIds[0], borrowedAt, expectedReturnAt);
+    return;
   }
-  return formatTemporalForEmail_(startText) + " - " + formatTemporalForEmail_(endText);
-}
-
-function formatTemporalForEmail_(value) {
-  const text = String(value || "").trim();
-  const dateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(text);
-  if (dateTime) {
-    return formatDateForEmail_(text.slice(0, 10)) + " " + dateTime[4];
-  }
-  return formatDateForEmail_(text);
-}
-
-function formatDateForEmail_(value) {
-  const text = String(value || "").trim();
-  const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  if (!date) return text || "未記錄";
-  return date[1] + "年" + Number(date[2]) + "月" + Number(date[3]) + "日";
+  ensureAssetsAvailableForPeriod_(
+    assetIds,
+    getDatePart_(borrowedAt),
+    getDatePart_(expectedReturnAt)
+  );
 }
 
 function createBorrowRecordFromApplicationRow_(appRow) {
@@ -1978,6 +2109,15 @@ function normalizeDateText_(value) {
   const text = String(value).trim();
   if (!text) return "";
   if (DATE_TEXT_PATTERN.test(text)) return text;
+
+  // 容錯：處理斜線、ISO 'T'、含時間等格式，僅取日期部分並正規化為 YYYY-MM-DD
+  const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (match) {
+    return (
+      match[1] + "-" + String(match[2]).padStart(2, "0") + "-" + String(match[3]).padStart(2, "0")
+    );
+  }
+
   return text;
 }
 
@@ -2016,14 +2156,51 @@ function ensureBorrowLeadTime_(borrowDate) {
   }
 }
 
+function computeNextWorkingDayText_(dateText) {
+  var holidaySet = getHolidaySet_();
+  var date = addDaysText_(dateText, 1);
+  for (var i = 0; i < 365; i++) {
+    if (isWorkingDayText_(date, holidaySet)) return date;
+    date = addDaysText_(date, 1);
+  }
+  return date;
+}
+
+function getEquipmentReturnCandidateDates_(borrowedAt) {
+  var holidaySet = getHolidaySet_();
+  var idealReturnAt = computeNextWorkingDayText_(borrowedAt);
+  var dates = [];
+  var date = borrowedAt;
+  for (var i = 0; i < 365; i++) {
+    if (date > idealReturnAt) break;
+    if (isWorkingDayText_(date, holidaySet)) dates.push(date);
+    date = addDaysText_(date, 1);
+  }
+  return dates;
+}
+
+function hasAnyAvailableReturnDate_(borrowedAt, blockedRanges, globalPauseRanges) {
+  var candidateDates = getEquipmentReturnCandidateDates_(borrowedAt);
+  for (var c = 0; c < candidateDates.length; c++) {
+    var expectedReturnAt = candidateDates[c];
+    if (isBlockedByRanges_(borrowedAt, expectedReturnAt, globalPauseRanges)) continue;
+    if (!isBlockedByRanges_(borrowedAt, expectedReturnAt, blockedRanges)) return true;
+  }
+  return false;
+}
+
 function ensureDateRange_(borrowedAt, expectedReturnAt) {
   const borrowed = requireDateText_(borrowedAt, "borrowedAt");
   const expected = requireDateText_(expectedReturnAt, "expectedReturnAt");
   if (expected < borrowed) {
     throw new Error("expectedReturnAt 不可早於 borrowedAt");
   }
-  if (expected > addDaysText_(borrowed, 6)) {
-    throw new Error("expectedReturnAt 最多為 borrowedAt 起算第 7 天");
+  const latestReturn = computeNextWorkingDayText_(borrowed);
+  if (expected > latestReturn) {
+    throw new Error("expectedReturnAt 不可晚於借用日的下一個工作天（" + latestReturn + "）");
+  }
+  if (!isWorkingDayText_(expected, getHolidaySet_())) {
+    throw new Error("expectedReturnAt 須為工作天");
   }
 }
 
@@ -2042,9 +2219,30 @@ function addDaysText_(dateText, days) {
 function normalizeTemporalText_(value) {
   if (!value) return "";
   if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
-    return Utilities.formatDate(value, APP_TIME_ZONE, "yyyy-MM-dd HH:mm");
+    // 午夜視為純日期（設備借用），其餘保留時分（空間借用）
+    const hasTime = value.getHours() !== 0 || value.getMinutes() !== 0;
+    return Utilities.formatDate(value, APP_TIME_ZONE, hasTime ? "yyyy-MM-dd HH:mm" : "yyyy-MM-dd");
   }
-  return String(value).trim();
+
+  const text = String(value).trim();
+  if (!text) return "";
+  if (DATE_TEXT_PATTERN.test(text) || DATETIME_TEXT_PATTERN.test(text)) return text;
+
+  // 容錯：處理斜線、ISO 'T'、含秒數等格式，正規化為 YYYY-MM-DD 或 YYYY-MM-DD HH:mm
+  const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::\d{2})?)?/);
+  if (match) {
+    const datePart =
+      match[1] + "-" + String(match[2]).padStart(2, "0") + "-" + String(match[3]).padStart(2, "0");
+    if (match[4] != null) {
+      const hour = Number(match[4]);
+      const minute = Number(match[5]);
+      if (hour === 0 && minute === 0) return datePart;
+      return datePart + " " + String(match[4]).padStart(2, "0") + ":" + match[5];
+    }
+    return datePart;
+  }
+
+  return text;
 }
 
 function getDatePart_(text) {
@@ -2088,6 +2286,12 @@ function isWeekendDate_(dateText) {
   const date = new Date(dateText + "T00:00:00");
   const day = date.getDay();
   return day === 0 || day === 6;
+}
+
+function isWorkingDayText_(dateText, holidaySet) {
+  if (isWeekendDate_(dateText)) return false;
+  const set = holidaySet || getHolidaySet_();
+  return !set[dateText];
 }
 
 function isHolidayLikeDate_(dateText, holidaySet) {
@@ -2203,7 +2407,8 @@ function setupRentalSheets() {
   getBorrowRecordsSheet_();
   getHolidaysSheet_();
   getGlobalPauseSheet_();
-  Logger.log("borrow_applications / borrow_records / holidays / global_pause_ranges 分頁已就緒");
+  getStudentUnlocksSheet_();
+  Logger.log("borrow_applications / borrow_records / holidays / global_pause_ranges / student_borrow_unlocks 分頁已就緒");
 }
 
 function reconcileBorrowingStateJob() {
