@@ -34,14 +34,14 @@ export function isWorkingDayText(dateText: string, holidayDates: Set<string>): b
 	return !isWeekendDateText(dateText) && !holidayDates.has(dateText);
 }
 
-// 申請需要作業時間：最早可借用日 = 從今天起算的第 workingDays 個工作天
-// （跳過週末與國定假日，今天若為工作天則算第 1 天）。
+// 申請需要作業時間：最早可借用日 = 申請當日不計入，從次日起算的第 workingDays 個工作天
+// （跳過週末與國定假日）。
 export function computeEarliestBorrowDate(
 	today: string,
 	holidayDates: Set<string>,
 	workingDays = 3,
 ): string {
-	let date = today;
+	let date = addDays(today, 1);
 	let count = 0;
 	for (let i = 0; i < 365; i += 1) {
 		if (isWorkingDayText(date, holidayDates)) {
@@ -69,6 +69,7 @@ export function getEquipmentReturnCandidateDates(
 	borrowedAt: string,
 	holidayDates: Set<string>,
 ): string[] {
+	if (!isWorkingDayText(borrowedAt, holidayDates)) return [];
 	const idealReturnAt = computeNextWorkingDay(borrowedAt, holidayDates);
 	const dates: string[] = [];
 	let date = borrowedAt;

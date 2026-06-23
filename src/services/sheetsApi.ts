@@ -7,7 +7,7 @@ import type {
     GlobalPauseRange,
     StaffAccountSummary,
     StaffRole,
-    StudentUnlock,
+    StudentBlock,
     VenueAvailability,
 } from "../types/rental";
 
@@ -222,27 +222,26 @@ export const sheetsApi = {
         });
     },
 
-    async fetchStudentUnlocks(): Promise<StudentUnlock[]> {
-        return request<StudentUnlock[]>("student-unlocks");
+    async fetchStudentBlocks(): Promise<StudentBlock[]> {
+        return request<StudentBlock[]>("student-blocks");
     },
 
-    async createStudentUnlock(payload: {
+    async createStudentBlock(payload: {
         operatorAccount: string;
         studentId: string;
         note?: string;
-    }): Promise<StudentUnlock & { ok: boolean }> {
-        return request("student-unlocks", {
+    }): Promise<StudentBlock & { ok: boolean; alreadyBlocked?: boolean }> {
+        return request("student-blocks", {
             method: "POST",
             body: JSON.stringify(payload),
         });
     },
 
-    async deleteStudentUnlock(payload: {
+    async deleteStudentBlock(payload: {
         operatorAccount: string;
-        studentId?: string;
-        id?: string;
+        studentId: string;
     }): Promise<{ ok: boolean; studentId: string }> {
-        return request("student-unlock-deletes", {
+        return request("student-block-deletes", {
             method: "POST",
             body: JSON.stringify(payload),
         });
@@ -324,5 +323,16 @@ export const sheetsApi = {
                 body: JSON.stringify(payload),
             },
         );
+    },
+
+    async updateBorrowRecordExpectedReturnAt(payload: {
+        operatorAccount: string;
+        recordId: string;
+        expectedReturnAt: string;
+    }): Promise<{ ok: boolean; recordId: string; expectedReturnAt: string }> {
+        return request("borrow-record-expected-return-updates", {
+            method: "POST",
+            body: JSON.stringify(payload),
+        });
     },
 };

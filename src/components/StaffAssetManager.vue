@@ -232,6 +232,7 @@
           <p v-if="view.activeRecord.returnRequestStatus === '待審核'" class="rounded-lg bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800">
             歸還申請待審核
           </p>
+          <RecordExpectedReturnEditor v-if="view.activeRecord" :record="view.activeRecord" />
         </div>
 
         <div v-else-if="view.displayStatus === 'available'" class="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-xs font-semibold text-emerald-800">
@@ -285,6 +286,7 @@ import { useAssetsStore } from "../stores/assets";
 import { useAuthStore } from "../stores/auth";
 import { isOverdue, useRentalStore } from "../stores/rental";
 import { formatDateSlash, formatTemporalZh, getTodayText } from "../utils/date";
+import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
 import type { Asset, AssetType, BorrowRecord } from "../types/rental";
 
 type DisplayStatus = "available" | "borrowed" | "pending" | "disabled" | "paused" | "globalPaused";

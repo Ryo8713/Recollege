@@ -151,7 +151,7 @@
 			class="fixed right-4 top-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 shadow-lg"
 		>
 			<div class="flex items-start justify-between gap-3">
-				<p class="font-semibold">可借資料可能已更新，請重新整理。</p>
+				<p class="font-semibold">可借日期可能已變動，請重新整理。</p>
 				<button
 					type="button"
 					class="-mr-1 rounded px-1.5 py-0.5 text-lg font-bold leading-none text-blue-700 transition hover:bg-blue-100"
@@ -202,8 +202,8 @@
 				<section class="border-b border-slate-200 pb-4">
 					<h3 class="text-sm font-semibold text-slate-800">【步驟一】選擇欲開始借用之日期</h3>
 					<p class="mt-1 text-xs text-slate-500">
-						申請需約 {{ BORROW_LEAD_WORKING_DAYS }} 個工作天作業時間（已排除週末與國定假日），最早可借用日期為
-						<span class="font-semibold text-slate-700">{{ formatDateZh(earliestBorrowDate) }}</span>。
+						申請需約 {{ BORROW_LEAD_WORKING_DAYS }} 個工作天作業時間（申請當日不計入，已排除週末與國定假日），最早可借用日期為
+						<span class="font-semibold text-slate-700">{{ formatDateZh(earliestBorrowDate) }}</span>。設備借用與歸還日須為工作天（週末與國定假日不可）。
 					</p>
 					<div class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
 						<input
@@ -302,7 +302,7 @@
 
 				<section v-else class="border-b border-slate-200 pb-4">
 					<h3 class="text-sm font-semibold text-slate-800">【步驟三】應歸還日期</h3>
-					<p class="mt-1 text-xs text-slate-500">設備須於借用日的下一個工作天前歸還，系統已自動為您計算應歸還日期。</p>
+					<p class="mt-1 text-xs text-slate-500">設備須於借用日的下一個工作天前歸還（週末與國定假日不可借用或歸還），系統已自動為您計算應歸還日期。</p>
 					<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
 					<p v-else-if="returnDateLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">正在確認可歸還日期...</p>
 					<p v-else-if="returnDateError" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ returnDateError }}</p>
@@ -450,11 +450,11 @@
 							</div>
 							<div class="grid grid-cols-7 gap-1">
 								<template v-for="(cell, index) in section.dayCells" :key="`${section.key}-${index}`">
-									<div v-if="!cell" class="h-12 rounded-lg" aria-hidden="true"></div>
+									<div v-if="!cell" class="h-10 rounded-lg" aria-hidden="true"></div>
 									<button
 										v-else
 										type="button"
-										class="flex h-12 flex-col items-center justify-center rounded-lg border text-sm font-semibold transition"
+										class="flex h-10 items-center justify-center rounded-lg border text-sm font-semibold transition"
 										:class="
 											cell.available
 												? form.borrowedAt === cell.date
@@ -466,8 +466,7 @@
 										:title="formatDateZhWithWeekday(cell.date)"
 										@click="applySuggestedBorrowDate(cell.date)"
 									>
-										<span>{{ cell.day }}</span>
-										<span class="text-[10px] font-medium leading-none">{{ cell.weekday }}</span>
+										{{ cell.day }}
 									</button>
 								</template>
 							</div>
@@ -565,8 +564,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import AssetAddFeedback from "./AssetAddFeedback.vue";
 import { useBorrowAvailability } from "../composables/useBorrowAvailability";
 import { useAssetsStore } from "../stores/assets";
-import { OVERDUE_BORROW_BLOCK_MESSAGE, studentHasOverdueBorrowRestriction, useRentalStore } from "../stores/rental";
-import { computeEarliestBorrowDate, computeNextWorkingDay, formatDateZh, formatDateZhWithWeekday, formatTemporalZh, getTodayText, getWeekdayLabel, isWorkingDayText, WEEKDAY_LABELS } from "../utils/date";
+import { OVERDUE_BORROW_BLOCK_MESSAGE, useRentalStore } from "../stores/rental";
+import { computeEarliestBorrowDate, computeNextWorkingDay, formatDateZh, formatDateZhWithWeekday, formatTemporalZh, getTodayText, isWorkingDayText, WEEKDAY_LABELS } from "../utils/date";
 import { sheetsApi } from "../services/sheetsApi";
 import type { Asset, VenueAvailability } from "../types/rental";
 import type { ReturnSearchRecord } from "../stores/rental";
@@ -574,7 +573,7 @@ import type { ReturnSearchRecord } from "../stores/rental";
 const assetsStore = useAssetsStore();
 const rentalStore = useRentalStore();
 const { assets } = storeToRefs(assetsStore);
-const { records: borrowRecords } = storeToRefs(rentalStore);
+
 const lookupWeekdayLabels = WEEKDAY_LABELS;
 
 const today = getTodayText();
@@ -801,11 +800,7 @@ const hasNoAvailableReturnDate = computed(() => {
 });
 
 const isStudentBorrowBlocked = computed(() =>
-	studentHasOverdueBorrowRestriction(
-		form.studentId,
-		borrowRecords.value,
-		rentalStore.blockStartDateByStudent,
-	),
+	rentalStore.isStudentBorrowRestricted(form.studentId),
 );
 
 watch(
@@ -863,7 +858,7 @@ async function refreshLatestData() {
 		await Promise.all([
 			assetsStore.loadAssets({ force: true }),
 			rentalStore.loadRecords({ force: true }),
-			rentalStore.loadStudentUnlocks({ force: true }),
+			rentalStore.loadStudentBlocks({ force: true }),
 		]);
 		await refreshBorrowAvailability();
 		if (returnSearchId.value) {
@@ -959,7 +954,11 @@ function validateBorrowBeforeSubmit(): boolean {
 		return false;
 	}
 	if (form.borrowedAt < earliestBorrowDate.value) {
-		borrowError.value = `因申請需約 ${BORROW_LEAD_WORKING_DAYS} 個工作天作業時間，最早可借用日期為 ${formatDateZh(earliestBorrowDate.value)}（已排除週末與國定假日）。`;
+		borrowError.value = `因申請需約 ${BORROW_LEAD_WORKING_DAYS} 個工作天作業時間（申請當日不計入），最早可借用日期為 ${formatDateZh(earliestBorrowDate.value)}（已排除週末與國定假日）。`;
+		return false;
+	}
+	if (!isVenueSelected.value && !isWorkingDayText(form.borrowedAt, holidayDates.value)) {
+		borrowError.value = "設備借用日須為工作天（週末與國定假日不可借用）。";
 		return false;
 	}
 	if (availabilityLoading.value) {
@@ -991,7 +990,7 @@ function validateBorrowBeforeSubmit(): boolean {
 
 function openBorrowConfirmModal() {
 	borrowError.value = "";
-	void Promise.all([rentalStore.loadRecords(), rentalStore.loadStudentUnlocks()]).then(() => {
+	void Promise.all([rentalStore.loadRecords(), rentalStore.loadStudentBlocks()]).then(() => {
 		if (!validateBorrowBeforeSubmit()) return;
 		showBorrowConfirmModal.value = true;
 	});
@@ -1097,7 +1096,7 @@ const lookupCalendarSections = computed(() => {
 			const firstWeekday = new Date(year, month - 1, 1).getDay();
 			const daysInMonth = new Date(year, month, 0).getDate();
 			const availableDates = new Set(dates);
-			const dayCells: Array<{ date: string; day: number; weekday: string; available: boolean } | null> = [];
+			const dayCells: Array<{ date: string; day: number; available: boolean } | null> = [];
 			for (let i = 0; i < firstWeekday; i += 1) {
 				dayCells.push(null);
 			}
@@ -1106,7 +1105,6 @@ const lookupCalendarSections = computed(() => {
 				dayCells.push({
 					date: dateText,
 					day,
-					weekday: getWeekdayLabel(dateText),
 					available: availableDates.has(dateText) && dateText >= earliestBorrowDate.value,
 				});
 			}
@@ -1253,7 +1251,7 @@ onMounted(() => {
 	void syncDataVersionSnapshot();
 	void loadHolidays();
 	void rentalStore.loadRecords();
-	void rentalStore.loadStudentUnlocks();
+	void rentalStore.loadStudentBlocks();
 	dataVersionPollTimer = setInterval(() => {
 		void checkRemoteDataVersion();
 	}, 30000);

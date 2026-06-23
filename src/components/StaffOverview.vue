@@ -458,22 +458,51 @@
                 <p class="text-sm font-semibold text-red-700">
                     應還：{{ formatTemporalZh(record.expectedReturnAt) }} ｜ 逾期 {{ getOverdueDays(record.expectedReturnAt) }} 天
                 </p>
+                <RecordExpectedReturnEditor :record="record" />
             </article>
         </div>
 
-        <!-- Active records -->
+        <!-- In-progress records (pending + active) -->
         <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <h3 class="mb-3 font-semibold text-slate-900">租借中紀錄</h3>
-            <p v-if="rentalStore.activeRecords.length === 0" class="text-sm text-slate-500">目前無租借中項目。</p>
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h3 class="font-semibold text-slate-900">進行中借用紀錄</h3>
+                    <p class="mt-0.5 text-xs text-slate-500">含待生效與租借中；管理員可於核准後、歸還前調整應歸還日期。</p>
+                </div>
+                <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    共 {{ rentalStore.inProgressRecords.length }} 筆
+                </span>
+            </div>
+            <p v-if="rentalStore.inProgressRecords.length === 0" class="text-sm text-slate-500">目前無進行中借用紀錄。</p>
             <article
-            v-for="record in rentalStore.activeRecords"
-            :key="record.id"
-            class="mb-2 rounded-xl border border-slate-100 bg-slate-50 p-3"
+                v-for="record in rentalStore.inProgressRecords"
+                :key="record.id"
+                class="mb-2 rounded-xl border border-slate-100 bg-slate-50 p-3"
             >
-            <p class="font-medium text-slate-900">{{ record.itemName }}</p>
-            <p class="text-sm text-slate-600">{{ record.studentId }} / {{ record.studentName }}</p>
-            <p class="text-sm text-slate-500">借用：{{ formatTemporalZh(record.borrowedAt) }} ｜ 應還：{{ formatTemporalZh(record.expectedReturnAt) }}</p>
-            <p v-if="rentalStore.isOverdue(record)" class="mt-0.5 text-xs font-semibold text-red-700">已逾借</p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <p class="font-medium text-slate-900">{{ record.itemName }}</p>
+                    <span
+                        v-if="record.status === '待生效'"
+                        class="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800"
+                    >
+                        待生效
+                    </span>
+                    <span
+                        v-else-if="rentalStore.isOverdue(record)"
+                        class="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
+                    >
+                        已逾借
+                    </span>
+                    <span
+                        v-else
+                        class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800"
+                    >
+                        租借中
+                    </span>
+                </div>
+                <p class="text-sm text-slate-600">{{ record.studentId }} / {{ record.studentName }}</p>
+                <p class="text-sm text-slate-500">借用：{{ formatTemporalZh(record.borrowedAt) }} ｜ 應還：{{ formatTemporalZh(record.expectedReturnAt) }}</p>
+                <RecordExpectedReturnEditor :record="record" />
             </article>
         </div>
 
@@ -528,6 +557,7 @@ import { useAuthStore } from "../stores/auth";
 import { formatDateZh, formatTemporalZh } from "../utils/date";
 import StaffAssetManager from "./StaffAssetManager.vue";
 import BorrowingRulesManager from "./BorrowingRulesManager.vue";
+import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
 import type { BorrowApplication } from "../types/rental";
 
 const rentalStore = useRentalStore();

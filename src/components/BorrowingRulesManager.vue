@@ -3,7 +3,7 @@
     <div class="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-900">
       <p class="font-semibold">借用規則說明</p>
       <p class="mt-1 text-xs leading-relaxed text-amber-800">
-        全校暫停區間，所有空間與設備不開放借用；國定假日僅調整空間可借用時段（08:00–23:00），設備仍依一般規則借用。
+        全校暫停區間，所有空間與設備不開放借用；國定假日會調整空間可借用時段（08:00–23:00），設備則於週末與國定假日不可借用或歸還。
       </p>
     </div>
 
@@ -96,7 +96,7 @@
         <div>
           <h3 class="font-bold text-slate-900">國定假日</h3>
           <p class="mt-1 text-xs text-slate-500">
-            國定假日會讓空間改用假日可借時段（08:00–23:00）；平日為 17:00–23:00。設備不受此規則影響。
+            國定假日會讓空間改用假日可借時段（08:00–23:00）；平日為 17:00–23:00。設備借用與歸還日須為工作天（週末與國定假日不可）。
           </p>
         </div>
         <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
@@ -165,108 +165,74 @@
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 class="font-bold text-slate-900">借用人解鎖（鎖學號）</h3>
+          <h3 class="font-bold text-slate-900">借用封鎖名單</h3>
           <p class="mt-1 text-xs text-slate-500">
-            曾未準時歸還的學號會被限制借用。解鎖後該日（含）以前的逾期／晚還紀錄不再計入，永久有效；若日後再次違規仍會被限制。僅限管理員操作。
+            名單內的學號無法提出借用申請。每日自動掃描逾期紀錄並登記；管理員可手動新增或移除。僅限管理員操作。
           </p>
         </div>
         <span class="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">
-          受限 {{ restrictedStudents.length }} 人
+          封鎖 {{ studentBlocks.length }} 人
         </span>
       </div>
 
-      <form class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-[200px_1fr_auto]" @submit.prevent="submitUnlock">
+      <form class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-[200px_1fr_auto]" @submit.prevent="submitAddBlock">
         <label class="space-y-1 text-sm text-slate-700">
           <span class="font-medium">學號</span>
           <input
-            v-model.trim="unlockForm.studentId"
+            v-model.trim="blockForm.studentId"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring"
-            placeholder="輸入要解鎖的學號"
-            :disabled="Boolean(unlocking)"
+            placeholder="輸入要封鎖的學號"
+            :disabled="Boolean(blocking)"
           />
         </label>
         <label class="space-y-1 text-sm text-slate-700">
           <span class="font-medium">備註（選填）</span>
           <input
-            v-model.trim="unlockForm.note"
+            v-model.trim="blockForm.note"
             maxlength="60"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring"
-            placeholder="例如：已當面說明規則"
-            :disabled="Boolean(unlocking)"
+            placeholder="例如：已通知當事人"
+            :disabled="Boolean(blocking)"
           />
         </label>
         <div class="flex items-end">
           <button
             type="submit"
-            class="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
-            :disabled="Boolean(unlocking)"
+            class="w-full rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto"
+            :disabled="Boolean(blocking)"
           >
-            {{ unlocking ? "解鎖中..." : "解鎖學號" }}
+            {{ blocking ? "新增中..." : "新增封鎖" }}
           </button>
         </div>
       </form>
 
-      <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <div>
-          <p class="text-sm font-semibold text-slate-800">目前受限制的學號</p>
-          <p v-if="unlocksLoading" class="mt-2 text-sm text-slate-500">讀取中...</p>
-          <p v-else-if="restrictedStudents.length === 0" class="mt-2 text-sm text-slate-400">目前沒有受限制的學號。</p>
-          <ul v-else class="mt-2 space-y-2">
-            <li
-              v-for="student in restrictedStudents"
-              :key="student.studentId"
-              class="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2"
+      <div class="mt-5">
+        <p class="text-sm font-semibold text-slate-800">目前封鎖名單</p>
+        <p v-if="blocksLoading" class="mt-2 text-sm text-slate-500">讀取中...</p>
+        <p v-else-if="studentBlocks.length === 0" class="mt-2 text-sm text-slate-400">目前沒有被封鎖的學號。</p>
+        <ul v-else class="mt-2 space-y-2">
+          <li
+            v-for="block in studentBlocks"
+            :key="block.studentId"
+            class="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2"
+          >
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold text-slate-900">{{ block.studentId }}</p>
+              <p class="text-xs text-slate-500">
+                封鎖日：{{ formatDateZh(block.blockedAt) }}
+                <span v-if="block.note"> · {{ block.note }}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+              :disabled="unblocking === block.studentId"
+              @click="removeBlock(block.studentId)"
             >
-              <div class="min-w-0">
-                <p class="truncate text-sm font-semibold text-slate-900">
-                  {{ student.studentId }}
-                  <span class="font-normal text-slate-500">{{ student.studentName }}</span>
-                </p>
-                <p v-if="student.blockStartDate" class="text-xs text-slate-500">
-                  上次解鎖：{{ formatDateZh(student.blockStartDate) }}（之後再次違規）
-                </p>
-              </div>
-              <button
-                type="button"
-                class="shrink-0 rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
-                :disabled="unlocking === student.studentId"
-                @click="unlockStudentId(student.studentId)"
-              >
-                {{ unlocking === student.studentId ? "解鎖中..." : "解鎖" }}
-              </button>
-            </li>
-          </ul>
-        </div>
-
-        <div>
-          <p class="text-sm font-semibold text-slate-800">已解鎖名單</p>
-          <p v-if="unlocksLoading" class="mt-2 text-sm text-slate-500">讀取中...</p>
-          <p v-else-if="studentUnlocks.length === 0" class="mt-2 text-sm text-slate-400">尚未解鎖任何學號。</p>
-          <ul v-else class="mt-2 space-y-2">
-            <li
-              v-for="unlock in studentUnlocks"
-              :key="unlock.id"
-              class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-            >
-              <div class="min-w-0">
-                <p class="truncate text-sm font-semibold text-slate-900">{{ unlock.studentId }}</p>
-                <p class="text-xs text-slate-500">
-                  解鎖日：{{ formatDateZh(unlock.blockStartDate) }}
-                  <span v-if="unlock.createdBy"> · 由 {{ unlock.createdBy }}</span>
-                </p>
-                <p v-if="unlock.note" class="text-xs text-slate-500">{{ unlock.note }}</p>
-              </div>
-              <button
-                type="button"
-                class="shrink-0 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
-                :disabled="relocking === unlock.studentId"
-                @click="removeUnlock(unlock.studentId)"
-              >
-                {{ relocking === unlock.studentId ? "移除中..." : "移除解鎖" }}
-              </button>
-            </li>
-          </ul>
-        </div>
+              {{ unblocking === block.studentId ? "移除中..." : "解除封鎖" }}
+            </button>
+          </li>
+        </ul>
       </div>
     </div>
 
@@ -280,7 +246,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAuthStore } from "../stores/auth";
@@ -290,7 +256,7 @@ import type { GlobalPauseRange, Holiday } from "../types/rental";
 
 const authStore = useAuthStore();
 const rentalStore = useRentalStore();
-const { studentUnlocks } = storeToRefs(rentalStore);
+const { studentBlocks } = storeToRefs(rentalStore);
 
 const holidays = ref<Holiday[]>([]);
 const globalPauses = ref<GlobalPauseRange[]>([]);
@@ -315,31 +281,13 @@ const globalPauseForm = reactive({
   note: "",
 });
 
-const unlockForm = reactive({
+const blockForm = reactive({
   studentId: "",
   note: "",
 });
-const unlocking = ref("");
-const relocking = ref("");
-const unlocksLoading = ref(false);
-
-const restrictedStudents = computed(() => {
-  const processed = new Set<string>();
-  const result: { studentId: string; studentName: string; blockStartDate: string }[] = [];
-  for (const record of rentalStore.records) {
-    const id = String(record.studentId || "").trim();
-    if (!id || processed.has(id)) continue;
-    processed.add(id);
-    if (rentalStore.isStudentBorrowRestricted(id)) {
-      result.push({
-        studentId: id,
-        studentName: record.studentName || id,
-        blockStartDate: rentalStore.blockStartDateByStudent[id] ?? "",
-      });
-    }
-  }
-  return result;
-});
+const blocking = ref("");
+const unblocking = ref("");
+const blocksLoading = ref(false);
 
 function isActiveToday(pause: GlobalPauseRange): boolean {
   return pause.startDate <= todayText && pause.endDate >= todayText;
@@ -460,67 +408,57 @@ async function removeGlobalPause(id: string) {
   }
 }
 
-async function unlockStudentId(studentId: string, note = "") {
-  const id = String(studentId || "").trim();
+async function submitAddBlock() {
+  const id = blockForm.studentId.trim();
   clearMessages();
   if (!id) {
-    errorMessage.value = "請輸入要解鎖的學號。";
+    errorMessage.value = "請輸入要封鎖的學號。";
     return;
   }
-  unlocking.value = id;
+  blocking.value = id;
   try {
-    await rentalStore.unlockStudent({
+    await rentalStore.addStudentBlock({
       operatorAccount: authStore.staffAccount,
       studentId: id,
-      note,
+      note: blockForm.note,
     });
-    successMessage.value = `已解鎖學號 ${id}。`;
+    successMessage.value = `已將學號 ${id} 加入封鎖名單。`;
+    blockForm.studentId = "";
+    blockForm.note = "";
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "解鎖失敗。";
+    errorMessage.value = error instanceof Error ? error.message : "新增封鎖失敗。";
   } finally {
-    unlocking.value = "";
+    blocking.value = "";
   }
 }
 
-async function submitUnlock() {
-  const id = unlockForm.studentId.trim();
-  await unlockStudentId(id, unlockForm.note);
-  if (!errorMessage.value) {
-    unlockForm.studentId = "";
-    unlockForm.note = "";
-  }
-}
-
-async function removeUnlock(studentId: string) {
+async function removeBlock(studentId: string) {
   clearMessages();
-  relocking.value = studentId;
+  unblocking.value = studentId;
   try {
-    await rentalStore.relockStudent({
+    await rentalStore.removeStudentBlock({
       operatorAccount: authStore.staffAccount,
       studentId,
     });
-    successMessage.value = `已移除學號 ${studentId} 的解鎖。`;
+    successMessage.value = `已解除學號 ${studentId} 的封鎖。`;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "移除解鎖失敗。";
+    errorMessage.value = error instanceof Error ? error.message : "解除封鎖失敗。";
   } finally {
-    relocking.value = "";
+    unblocking.value = "";
   }
 }
 
-async function loadUnlockData() {
+async function loadBlocksData() {
   if (authStore.staffRole !== "admin") return;
-  unlocksLoading.value = true;
+  blocksLoading.value = true;
   try {
-    await Promise.all([
-      rentalStore.loadRecords({ force: true }),
-      rentalStore.loadStudentUnlocks({ force: true }),
-    ]);
+    await rentalStore.loadStudentBlocks({ force: true });
   } finally {
-    unlocksLoading.value = false;
+    blocksLoading.value = false;
   }
 }
 
 onMounted(() => {
-  void Promise.all([loadHolidays(), loadGlobalPauses(), loadUnlockData()]);
+  void Promise.all([loadHolidays(), loadGlobalPauses(), loadBlocksData()]);
 });
 </script>

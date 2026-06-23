@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from "vue";
 import { sheetsApi } from "../services/sheetsApi";
-import { addDays, getEquipmentReturnCandidateDates } from "../utils/date";
+import { addDays, getEquipmentReturnCandidateDates, isWorkingDayText } from "../utils/date";
 import type { Asset, VenueAvailability } from "../types/rental";
 
 type BorrowMode = "borrow" | "return";
@@ -283,6 +283,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		for (let day = 0; day < windowDays; day += 1) {
 			const startDate = addDays(fromDate, day);
 			if (isGloballyClosedDate(startDate)) continue;
+			if (!isWorkingDayText(startDate, holidayDates.value)) continue;
 			if (hasAnyAvailableReturnDate(startDate, blockedRanges)) {
 				dates.push(startDate);
 			}
@@ -294,6 +295,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		borrowedAt: string,
 		ranges: Array<{ start: string; end: string }>,
 	): boolean {
+		if (!isWorkingDayText(borrowedAt, holidayDates.value)) return false;
 		for (const expectedReturnAt of getEquipmentReturnCandidateDates(borrowedAt, holidayDates.value)) {
 			if (!isBlockedByRanges(borrowedAt, expectedReturnAt, ranges)) {
 				return true;
@@ -321,6 +323,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				if (!isBlockedOnDate(borrowedAt, blockedRanges)) venues.push(asset);
 				continue;
 			}
+			if (!isWorkingDayText(borrowedAt, holidayDates.value)) continue;
 			if (!hasAnyAvailableReturnDate(borrowedAt, blockedRanges)) continue;
 			if (asset.type === "equipment") equipments.push(asset);
 		}

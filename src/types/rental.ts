@@ -79,13 +79,10 @@ export interface GlobalPauseRange {
     createdBy: string;
 }
 
-export interface StudentUnlock {
-    id: string;
+export interface StudentBlock {
     studentId: string;
-    blockStartDate: string;
+    blockedAt: string;
     note: string;
-    createdAt: string;
-    createdBy: string;
 }
 
 export interface VenueAvailability {

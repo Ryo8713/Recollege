@@ -7,10 +7,9 @@ import {
     hasOverdueBorrowRestriction,
     isOverdue,
     OVERDUE_BORROW_BLOCK_MESSAGE,
-    studentHasOverdueBorrowRestriction,
     wasReturnedLate,
 } from "../utils/borrowRestrictions";
-import type { BorrowApplication, BorrowRecord, StudentUnlock } from "../types/rental";
+import type { BorrowApplication, BorrowRecord, StudentBlock } from "../types/rental";
 
 export interface ReturnSearchRecord extends BorrowRecord {
     returnPending: boolean;
@@ -20,7 +19,6 @@ export {
     hasOverdueBorrowRestriction,
     isOverdue,
     OVERDUE_BORROW_BLOCK_MESSAGE,
-    studentHasOverdueBorrowRestriction,
     wasReturnedLate,
 } from "../utils/borrowRestrictions";
 
@@ -29,15 +27,15 @@ export const useRentalStore = defineStore("rental", () => {
 
     const applications = ref<BorrowApplication[]>([]);
     const records = ref<BorrowRecord[]>([]);
-    const studentUnlocks = ref<StudentUnlock[]>([]);
+    const studentBlocks = ref<StudentBlock[]>([]);
     const loading = ref(false);
     const loadError = ref("");
     const loadedApplicationsAt = ref(0);
     const loadedRecordsAt = ref(0);
-    const loadedUnlocksAt = ref(0);
+    const loadedBlocksAt = ref(0);
     const inFlightApplicationsLoad = ref<Promise<void> | null>(null);
     const inFlightRecordsLoad = ref<Promise<void> | null>(null);
-    const inFlightUnlocksLoad = ref<Promise<void> | null>(null);
+    const inFlightBlocksLoad = ref<Promise<void> | null>(null);
     const LOAD_TTL_MS = 60 * 1000;
     const reviewError = ref("");
     const reviewingApplicationIds = ref<string[]>([]);
@@ -46,23 +44,30 @@ export const useRentalStore = defineStore("rental", () => {
         applications.value.filter((a) => a.status === "待審核"),
     );
     const activeRecords = computed(() => records.value.filter((r) => r.status === "租借中"));
+    const inProgressRecords = computed(() => {
+        const statusOrder: Partial<Record<BorrowRecord["status"], number>> = { 租借中: 0, 待生效: 1 };
+        return records.value
+            .filter((r) => r.status === "租借中" || r.status === "待生效")
+            .sort((a, b) => {
+                const dateDiff = a.borrowedAt.localeCompare(b.borrowedAt);
+                if (dateDiff !== 0) return dateDiff;
+                return (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+            });
+    });
     const overdueRecords = computed(() => activeRecords.value.filter((r) => isOverdue(r)));
 
-    // 學號 -> 開始封鎖日期（取最新一筆解鎖）。
-    const blockStartDateByStudent = computed(() => {
-        const map: Record<string, string> = {};
-        for (const unlock of studentUnlocks.value) {
-            const id = unlock.studentId.trim();
-            if (!id) continue;
-            if (!map[id] || unlock.blockStartDate > map[id]) {
-                map[id] = unlock.blockStartDate;
-            }
+    // 封鎖名單學號集合，供快速查詢。
+    const blockedStudentIds = computed(() => {
+        const set = new Set<string>();
+        for (const block of studentBlocks.value) {
+            const id = block.studentId.trim();
+            if (id) set.add(id);
         }
-        return map;
+        return set;
     });
 
     function isStudentBorrowRestricted(studentId: string): boolean {
-        return studentHasOverdueBorrowRestriction(studentId, records.value, blockStartDateByStudent.value);
+        return blockedStudentIds.value.has(studentId.trim());
     }
 
     function beginReview(applicationId: string) {
@@ -139,36 +144,36 @@ export const useRentalStore = defineStore("rental", () => {
         return inFlightRecordsLoad.value;
     }
 
-    async function loadStudentUnlocks(options?: { force?: boolean }) {
+    async function loadStudentBlocks(options?: { force?: boolean }) {
         const force = Boolean(options?.force);
-        if (inFlightUnlocksLoad.value) {
-            return inFlightUnlocksLoad.value;
+        if (inFlightBlocksLoad.value) {
+            return inFlightBlocksLoad.value;
         }
-        if (!shouldLoadByTimestamp(loadedUnlocksAt.value, force)) {
+        if (!shouldLoadByTimestamp(loadedBlocksAt.value, force)) {
             return;
         }
 
-        inFlightUnlocksLoad.value = (async () => {
+        inFlightBlocksLoad.value = (async () => {
             try {
-                studentUnlocks.value = await sheetsApi.fetchStudentUnlocks();
-                loadedUnlocksAt.value = Date.now();
+                studentBlocks.value = await sheetsApi.fetchStudentBlocks();
+                loadedBlocksAt.value = Date.now();
             } catch {
-                // 解鎖名單讀取失敗時不阻擋借用流程，僅退回為「無解鎖」狀態。
+                // 封鎖名單讀取失敗時不阻擋借用流程，僅退回為「無封鎖」狀態。
             } finally {
-                inFlightUnlocksLoad.value = null;
+                inFlightBlocksLoad.value = null;
             }
         })();
-        return inFlightUnlocksLoad.value;
+        return inFlightBlocksLoad.value;
     }
 
-    async function unlockStudent(payload: { operatorAccount: string; studentId: string; note?: string }) {
-        await sheetsApi.createStudentUnlock(payload);
-        await loadStudentUnlocks({ force: true });
+    async function addStudentBlock(payload: { operatorAccount: string; studentId: string; note?: string }) {
+        await sheetsApi.createStudentBlock(payload);
+        await loadStudentBlocks({ force: true });
     }
 
-    async function relockStudent(payload: { operatorAccount: string; studentId?: string; id?: string }) {
-        await sheetsApi.deleteStudentUnlock(payload);
-        await loadStudentUnlocks({ force: true });
+    async function removeStudentBlock(payload: { operatorAccount: string; studentId: string }) {
+        await sheetsApi.deleteStudentBlock(payload);
+        await loadStudentBlocks({ force: true });
     }
 
     async function submitBorrowApplication(payload: {
@@ -184,7 +189,7 @@ export const useRentalStore = defineStore("rental", () => {
         borrowedAt: string;
         expectedReturnAt: string;
     }) {
-        await Promise.all([loadRecords(), loadStudentUnlocks()]);
+        await Promise.all([loadRecords(), loadStudentBlocks()]);
         if (isStudentBorrowRestricted(payload.studentId)) {
             throw new Error(OVERDUE_BORROW_BLOCK_MESSAGE);
         }
@@ -367,6 +372,19 @@ export const useRentalStore = defineStore("rental", () => {
             }));
     }
 
+    async function updateRecordExpectedReturnAt(payload: {
+        operatorAccount: string;
+        recordId: string;
+        expectedReturnAt: string;
+    }) {
+        const { expectedReturnAt } = await sheetsApi.updateBorrowRecordExpectedReturnAt(payload);
+        const record = records.value.find((r) => r.id === payload.recordId);
+        if (record) {
+            record.expectedReturnAt = expectedReturnAt;
+        }
+        await loadRecords({ force: true });
+    }
+
     async function submitReturnApplication(payload: {
         studentId: string;
         studentName: string;
@@ -422,7 +440,7 @@ export const useRentalStore = defineStore("rental", () => {
     return {
         applications,
         records,
-        studentUnlocks,
+        studentBlocks,
         loading,
         loadError,
         loadedApplicationsAt,
@@ -431,20 +449,21 @@ export const useRentalStore = defineStore("rental", () => {
         reviewingApplicationIds,
         pendingApplications,
         activeRecords,
+        inProgressRecords,
         overdueRecords,
-        blockStartDateByStudent,
+        blockedStudentIds,
         isOverdue,
         wasReturnedLate,
         hasOverdueBorrowRestriction,
-        studentHasOverdueBorrowRestriction,
         isStudentBorrowRestricted,
         OVERDUE_BORROW_BLOCK_MESSAGE,
         loadApplications,
         loadRecords,
-        loadStudentUnlocks,
-        unlockStudent,
-        relockStudent,
+        loadStudentBlocks,
+        addStudentBlock,
+        removeStudentBlock,
         submitBorrowApplication,
+        updateRecordExpectedReturnAt,
         approveApplication,
         rejectApplication,
         isReviewing,
