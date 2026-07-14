@@ -18,6 +18,7 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
   const rejectionReasonLine =
     nextStatus === "已駁回" ? "駁回原因：" + (rejectionReason || "未填寫") + "\n" : "";
   const body =
+    "此信件由系統自動發送，請勿直接回覆。\n" +
     (studentName || "同學") +
     " 您好：\n\n" +
     "您的" +
@@ -45,8 +46,10 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
     "\n" +
     (mentorName ? "負責導師：" + mentorName + "\n" : "") +
     "\n" +
-    "此信件由系統自動發送，請勿直接回覆。\n" +
-    "如有疑問，請洽住宿書院管理人員。";
+    "如有疑問，請洽住宿書院管理人員。\n" +
+    "姓名: 高志逸\n" + 
+    "Email: kaocy0729@gapp.nthu.edu.tw\n" + 
+    "電話: (03)51-62555";
 
   MailApp.sendEmail(studentEmail, subject, body);
 }

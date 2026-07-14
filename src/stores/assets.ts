@@ -55,11 +55,12 @@ export const useAssetsStore = defineStore("assets", () => {
 			throw new Error("請輸入名稱");
 		}
 
-		await sheetsApi.createAsset({ name: trimmedName, type });
-		await loadAssets();
-		const created = assets.value.find((a) => a.name === trimmedName && a.type === type);
+		const { assetId } = await sheetsApi.createAsset({ name: trimmedName, type });
+		await loadAssets({ force: true });
+		
+		const created = assets.value.find((a) => a.id === assetId);
 		if (created) return created;
-		throw new Error("已寫入試算表，但讀取列表時找不到新項目，請重新整理頁面。");
+		throw new Error("已寫入資料庫，但讀取列表時找不到新項目，請重新整理頁面。");
 	}
 
 	async function deleteAsset(assetId: string, operatorAccount: string) {
