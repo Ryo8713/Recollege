@@ -159,15 +159,12 @@
       </ul>
     </div>
 
-    <div
-      v-if="authStore.staffRole === 'admin'"
-      class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
-    >
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 class="font-bold text-slate-900">借用封鎖名單</h3>
           <p class="mt-1 text-xs text-slate-500">
-            名單內的學號無法提出借用申請。每日自動掃描逾期紀錄並登記；管理員可手動新增或移除。僅限管理員操作。
+            名單內的學號無法提出借用申請。每日自動掃描逾期紀錄並登記；職員可手動新增或移除。
           </p>
         </div>
         <span class="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">
@@ -449,7 +446,6 @@ async function removeBlock(studentId: string) {
 }
 
 async function loadBlocksData() {
-  if (authStore.staffRole !== "admin") return;
   blocksLoading.value = true;
   try {
     await rentalStore.loadStudentBlocks({ force: true });

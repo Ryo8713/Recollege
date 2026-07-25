@@ -19,13 +19,16 @@
 		<section class="border-b border-slate-200 pb-4">
 			<h3 class="text-sm font-semibold text-slate-800">【步驟二】選擇當日可借用項目（空間或設備擇一）</h3>
 			<p class="mt-1 text-xs text-slate-500">單次借用僅能選擇一個項目。</p>
-			<p v-if="availability.error" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
+			<p v-if="!form.borrowedAt" class="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">
+				請先選擇借用日期。
+			</p>
+			<p v-else-if="availability.error" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
 				{{ availability.error }}
 			</p>
 			<p v-else-if="availability.loading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">
 				正在更新指定日期的可借項目...
 			</p>
-			<div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+			<div v-if="form.borrowedAt && !availability.loading" class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
 				<div class="space-y-2">
 					<p class="text-xs font-semibold text-slate-500">空間</p>
 					<div v-if="availability.availableVenues.length === 0" class="rounded-lg bg-slate-50 p-3 text-sm text-slate-500">無可借空間</div>
@@ -82,6 +85,10 @@
 			:submit-disabled="submitState.submitDisabled"
 			@submit="emit('submit')"
 		/>
+
+		<p v-if="borrowError" class="rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-700">
+			{{ borrowError }}
+		</p>
 	</div>
 </template>
 
@@ -109,6 +116,7 @@ const props = defineProps<{
 	venueSlots: DateFirstVenueSlots;
 	equipmentReturn: DateFirstEquipmentReturn;
 	submitState: DateFirstSubmitState;
+	borrowError?: string;
 }>();
 
 const emit = defineEmits<{

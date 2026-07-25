@@ -1,16 +1,11 @@
 import { reactive, ref } from "vue";
 import { defineStore } from "pinia";
-import { sheetsApi, hasApiBaseUrl } from "../services/sheetsApi";
-import type { StaffRole } from "../types/rental";
-
-const STAFF_ACCOUNT = "admin";
-const STAFF_PASSWORD = "1234";
+import { sheetsApi } from "../services/sheetsApi";
 
 export const useAuthStore = defineStore("auth", () => {
 	const isStaffLoggedIn = ref(false);
 	const staffAccount = ref("");
 	const staffName = ref("");
-	const staffRole = ref<StaffRole>("staff");
 	const showStaffLoginModal = ref(false);
 	const staffLoginError = ref("");
 	const loginLoading = ref(false);
@@ -34,27 +29,13 @@ export const useAuthStore = defineStore("auth", () => {
 	async function loginStaff(): Promise<boolean> {
 		loginLoading.value = true;
 		try {
-			if (hasApiBaseUrl()) {
-				const result = await sheetsApi.loginStaff({
-					account: staffLoginForm.account.trim(),
-					password: staffLoginForm.password,
-				});
-				isStaffLoggedIn.value = true;
-				staffAccount.value = result.account;
-				staffName.value = result.name || result.account;
-				staffRole.value = result.role;
-			} else {
-				const valid =
-					staffLoginForm.account === STAFF_ACCOUNT && staffLoginForm.password === STAFF_PASSWORD;
-				if (!valid) {
-					staffLoginError.value = "帳號或密碼錯誤，請重新輸入。";
-					return false;
-				}
-				isStaffLoggedIn.value = true;
-				staffAccount.value = staffLoginForm.account;
-				staffName.value = staffLoginForm.account;
-				staffRole.value = "admin";
-			}
+			const result = await sheetsApi.loginStaff({
+				account: staffLoginForm.account.trim(),
+				password: staffLoginForm.password,
+			});
+			isStaffLoggedIn.value = true;
+			staffAccount.value = result.account;
+			staffName.value = result.name || result.account;
 			showStaffLoginModal.value = false;
 			staffLoginError.value = "";
 			return true;
@@ -70,14 +51,11 @@ export const useAuthStore = defineStore("auth", () => {
 		if (!isStaffLoggedIn.value) {
 			throw new Error("請先登入職員帳號。");
 		}
-		if (!hasApiBaseUrl()) {
-			throw new Error("尚未設定 API，無法新增職員帳號。");
-		}
 		return sheetsApi.createStaffAccount({
 			operatorAccount: staffAccount.value,
 			account: payload.account,
-			name: payload.name,
 			password: payload.password,
+			name: payload.name
 		});
 	}
 
@@ -85,14 +63,12 @@ export const useAuthStore = defineStore("auth", () => {
 		isStaffLoggedIn.value = false;
 		staffAccount.value = "";
 		staffName.value = "";
-		staffRole.value = "staff";
 	}
 
 	return {
 		isStaffLoggedIn,
 		staffAccount,
 		staffName,
-		staffRole,
 		showStaffLoginModal,
 		staffLoginError,
 		loginLoading,

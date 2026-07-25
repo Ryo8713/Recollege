@@ -4,9 +4,9 @@
 		<p class="mt-1 text-xs text-slate-500">
 			設備須於借用日的下一個工作天前歸還（週末與國定假日不可借用或歸還），系統已自動為您計算應歸還日期。
 		</p>
-		<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟 2。</p>
+		<p v-if="!selectedAssetId" class="mt-2 text-sm text-slate-500">請先完成步驟二。</p>
 		<p v-else-if="returnDateLoading" class="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">
-			正在確認可歸還日期...
+			正在計算應歸還日期...
 		</p>
 		<p v-else-if="returnDateError" class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">
 			{{ returnDateError }}
@@ -18,7 +18,7 @@
 			</div>
 		</template>
 		<p v-else-if="hasNoAvailableReturnDate" class="mt-2 text-sm text-slate-500">
-			此品項在所選借用日期下無可歸還日期，請改選借用日期或項目。
+			此品項目前無可歸還日期，請改選借用日期或項目。
 		</p>
 		<p v-else-if="selectedAssetId" class="mt-2 text-sm text-slate-500">請先選擇借用日期。</p>
 	</section>

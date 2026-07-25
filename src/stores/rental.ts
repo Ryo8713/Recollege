@@ -6,7 +6,7 @@ import { getTodayText } from "../utils/date";
 import {
     hasOverdueBorrowRestriction,
     isOverdue,
-    OVERDUE_BORROW_BLOCK_MESSAGE,
+    BORROW_BLOCK_MESSAGE,
     wasReturnedLate,
 } from "../utils/borrowRestrictions";
 import type { BorrowApplication, BorrowRecord, StudentBlock } from "../types/rental";
@@ -18,7 +18,7 @@ export interface ReturnSearchRecord extends BorrowRecord {
 export {
     hasOverdueBorrowRestriction,
     isOverdue,
-    OVERDUE_BORROW_BLOCK_MESSAGE,
+    BORROW_BLOCK_MESSAGE,
     wasReturnedLate,
 } from "../utils/borrowRestrictions";
 
@@ -191,7 +191,7 @@ export const useRentalStore = defineStore("rental", () => {
     }) {
         await Promise.all([loadRecords(), loadStudentBlocks()]);
         if (isStudentBorrowRestricted(payload.studentId)) {
-            throw new Error(OVERDUE_BORROW_BLOCK_MESSAGE);
+            throw new Error(BORROW_BLOCK_MESSAGE);
         }
 
         const appPayload = { ...payload, type: "借用申請" as const };
@@ -456,7 +456,7 @@ export const useRentalStore = defineStore("rental", () => {
         wasReturnedLate,
         hasOverdueBorrowRestriction,
         isStudentBorrowRestricted,
-        OVERDUE_BORROW_BLOCK_MESSAGE,
+        BORROW_BLOCK_MESSAGE,
         loadApplications,
         loadRecords,
         loadStudentBlocks,

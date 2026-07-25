@@ -20,7 +20,7 @@
 		</div>
 
 		<p v-if="returnSearchError" class="text-sm font-semibold text-red-700">{{ returnSearchError }}</p>
-
+		
 		<div v-if="returnResults.length > 0" class="space-y-3">
 			<article
 				v-for="record in returnResults"

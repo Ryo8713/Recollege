@@ -54,10 +54,9 @@ const VALID_STATUS = ["可租借", "已借出", "停用中"];
 const VALID_APPLICATION_TYPES = ["借用申請", "歸還申請"];
 const VALID_APPLICATION_STATUS = ["待審核", "已核准", "已駁回"];
 const VALID_RECORD_STATUS = ["待生效", "租借中", "已歸還"];
-const STAFF_ACCOUNT_HEADERS = ["account", "password", "role", "status", "createdAt", "createdBy", "name"];
-const STAFF_ACCOUNT_STATUS_ACTIVE = "active";
-const STAFF_ACCOUNT_DEFAULT_ADMIN = "admin";
-const STAFF_ACCOUNT_DEFAULT_ADMIN_PASSWORD = "1234";
+const STAFF_ACCOUNT_HEADERS = ["name", "account", "password", "createdAt", "createdBy"];
+const DEFAULT_STAFF_ACCOUNT = "admin";
+const DEFAULT_STAFF_PASSWORD = "1234";
 const APP_TIME_ZONE = "Asia/Taipei";
 const DATE_TEXT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME_TEXT_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
@@ -295,9 +294,53 @@ function getGlobalPauseSheet_() {
 }
 
 function getStaffAccountsSheet_() {
+  const existingSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_STAFF_ACCOUNTS);
+  if (existingSheet) {
+    migrateStaffAccountsSheet_(existingSheet);
+  }
   const sheet = getSheetWithHeaders_(SHEET_STAFF_ACCOUNTS, STAFF_ACCOUNT_HEADERS);
   ensureDefaultStaffAccount_(sheet);
   return sheet;
+}
+
+function migrateStaffAccountsSheet_(sheet) {
+  if (sheet.getLastRow() < 1) return;
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(function (header) {
+    return String(header || "").trim();
+  });
+  const alreadyCurrent = STAFF_ACCOUNT_HEADERS.every(function (header, index) {
+    return headers[index] === header;
+  }) && headers.length === STAFF_ACCOUNT_HEADERS.length;
+  if (alreadyCurrent) return;
+
+  const headerIndexes = {};
+  for (var i = 0; i < headers.length; i++) {
+    if (headers[i]) headerIndexes[headers[i].toLowerCase()] = i;
+  }
+
+  const lastRow = sheet.getLastRow();
+  var migratedRows = [];
+  if (lastRow >= 2) {
+    const oldRows = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
+    migratedRows = oldRows.map(function (row) {
+      const accountIndex = headerIndexes.account;
+      const account = accountIndex === undefined ? "" : String(row[accountIndex] || "").trim();
+      return STAFF_ACCOUNT_HEADERS.map(function (header) {
+        const sourceIndex = headerIndexes[header.toLowerCase()];
+        if (sourceIndex !== undefined) return row[sourceIndex];
+        if (header === "name") return account;
+        return "";
+      });
+    });
+  }
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, STAFF_ACCOUNT_HEADERS.length).setValues([STAFF_ACCOUNT_HEADERS]);
+  if (migratedRows.length > 0) {
+    sheet.getRange(2, 1, migratedRows.length, STAFF_ACCOUNT_HEADERS.length).setValues(migratedRows);
+  }
+  sheet.setFrozenRows(1);
 }
 
 function getStudentBlocksSheet_() {
@@ -402,7 +445,7 @@ function createAsset_(body) {
 function deleteAsset_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
   }
 
@@ -547,7 +590,7 @@ function getHolidaySet_() {
 function createHoliday_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
   }
   const date = requireDateText_(body && body.date, "date");
@@ -576,7 +619,7 @@ function createHoliday_(body) {
 function deleteHoliday_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
   }
   const date = requireDateText_(body && body.date, "date");
@@ -664,7 +707,7 @@ function ensureGlobalPauseRangeNoBorrowConflict_(pauseStartDate, pauseEndDate) {
 function createGlobalPauseRange_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
   }
   const startDate = requireDateText_(body && body.startDate, "startDate");
@@ -696,7 +739,7 @@ function createGlobalPauseRange_(body) {
 function deleteGlobalPauseRange_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
   }
   const id = requireField_(body && body.id, "id");
@@ -758,16 +801,14 @@ function readStaffAccounts_() {
   const rows = sheet.getRange(2, 1, lastRow - 1, STAFF_ACCOUNT_HEADERS.length).getValues();
   const accounts = [];
   for (var i = 0; i < rows.length; i++) {
-    const account = String(rows[i][0] || "").trim();
-    const status = String(rows[i][3] || STAFF_ACCOUNT_STATUS_ACTIVE).trim();
-    if (!account || status !== STAFF_ACCOUNT_STATUS_ACTIVE) continue;
+    const name = String(rows[i][0] || "").trim();
+    const account = String(rows[i][1] || "").trim();
+    if (!account) continue;
     accounts.push({
       account: account,
-      role: String(rows[i][2] || "staff").trim(),
-      status: status,
-      createdAt: String(rows[i][4] || "").trim(),
-      createdBy: String(rows[i][5] || "").trim(),
-      name: String(rows[i][6] || account).trim(),
+      createdAt: String(rows[i][3] || "").trim(),
+      createdBy: String(rows[i][4] || "").trim(),
+      name: name || account,
     });
   }
   return accounts;
@@ -777,13 +818,12 @@ function verifyStaffLogin_(body) {
   const account = requireField_(body && body.account, "account");
   const password = requireField_(body && body.password, "password");
   const staff = findStaffAccount_(account);
-  if (!staff || staff.status !== STAFF_ACCOUNT_STATUS_ACTIVE || staff.password !== password) {
+  if (!staff || staff.password !== password) {
     throw new Error("帳號或密碼錯誤，請重新輸入。");
   }
   return {
     ok: true,
     account: staff.account,
-    role: staff.role,
     name: staff.name || staff.account,
   };
 }
@@ -795,7 +835,7 @@ function createStaffAccount_(body) {
   const name = requireField_(body && body.name, "name");
 
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
   }
   if (password.length < 4) {
@@ -806,13 +846,13 @@ function createStaffAccount_(body) {
   }
 
   const existed = findStaffAccount_(account);
-  if (existed && existed.status === STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (existed) {
     throw new Error("帳號已存在，請使用其他帳號。");
   }
 
   const sheet = getStaffAccountsSheet_();
   const createdAt = new Date().toISOString();
-  sheet.appendRow([account, password, "staff", STAFF_ACCOUNT_STATUS_ACTIVE, createdAt, operator.account, name]);
+  sheet.appendRow([name, account, password, createdAt, operator.account]);
   return { ok: true, account: account, name: name };
 }
 
@@ -824,16 +864,14 @@ function findStaffAccount_(account) {
   if (lastRow < 2) return null;
   const rows = sheet.getRange(2, 1, lastRow - 1, STAFF_ACCOUNT_HEADERS.length).getValues();
   for (var i = 0; i < rows.length; i++) {
-    const currentAccount = String(rows[i][0] || "").trim();
+    const currentAccount = String(rows[i][1] || "").trim();
     if (currentAccount !== target) continue;
     return {
       account: currentAccount,
-      password: String(rows[i][1] || "").trim(),
-      role: String(rows[i][2] || "staff").trim(),
-      status: String(rows[i][3] || STAFF_ACCOUNT_STATUS_ACTIVE).trim(),
-      createdAt: String(rows[i][4] || "").trim(),
-      createdBy: String(rows[i][5] || "").trim(),
-      name: String(rows[i][6] || currentAccount).trim(),
+      password: String(rows[i][2] || "").trim(),
+      createdAt: String(rows[i][3] || "").trim(),
+      createdBy: String(rows[i][4] || "").trim(),
+      name: String(rows[i][0] || currentAccount).trim(),
     };
   }
   return null;
@@ -843,31 +881,27 @@ function ensureDefaultStaffAccount_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
     sheet.appendRow([
-      STAFF_ACCOUNT_DEFAULT_ADMIN,
-      STAFF_ACCOUNT_DEFAULT_ADMIN_PASSWORD,
-      "admin",
-      STAFF_ACCOUNT_STATUS_ACTIVE,
+      DEFAULT_STAFF_ACCOUNT,
+      DEFAULT_STAFF_ACCOUNT,
+      DEFAULT_STAFF_PASSWORD,
       new Date().toISOString(),
       "system",
-      STAFF_ACCOUNT_DEFAULT_ADMIN,
     ]);
     return;
   }
 
   const rows = sheet.getRange(2, 1, lastRow - 1, STAFF_ACCOUNT_HEADERS.length).getValues();
   for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][0] || "").trim() === STAFF_ACCOUNT_DEFAULT_ADMIN) {
+    if (String(rows[i][1] || "").trim() === DEFAULT_STAFF_ACCOUNT) {
       return;
     }
   }
   sheet.appendRow([
-    STAFF_ACCOUNT_DEFAULT_ADMIN,
-    STAFF_ACCOUNT_DEFAULT_ADMIN_PASSWORD,
-    "admin",
-    STAFF_ACCOUNT_STATUS_ACTIVE,
+    DEFAULT_STAFF_ACCOUNT,
+    DEFAULT_STAFF_ACCOUNT,
+    DEFAULT_STAFF_PASSWORD,
     new Date().toISOString(),
     "system",
-    STAFF_ACCOUNT_DEFAULT_ADMIN,
   ]);
 }
 
@@ -1460,20 +1494,17 @@ function dailyCheckAndBlockOverdueStudents_() {
   if (added) bumpDataVersion_();
 }
 
-function ensureOperatorIsAdmin_(operatorAccount) {
+function ensureActiveStaffOperator_(operatorAccount) {
   const operator = findStaffAccount_(operatorAccount);
-  if (!operator || operator.status !== STAFF_ACCOUNT_STATUS_ACTIVE) {
+  if (!operator) {
     throw new Error("職員帳號驗證失敗。");
-  }
-  if (operator.role !== "admin") {
-    throw new Error("僅限管理員操作此功能。");
   }
   return operator;
 }
 
 function createStudentBlock_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
-  ensureOperatorIsAdmin_(operatorAccount);
+  ensureActiveStaffOperator_(operatorAccount);
   const studentId = String((body && body.studentId) || "").trim();
   if (!studentId) throw new Error("studentId 為必填");
   const note = String((body && body.note) || "").trim();
@@ -1500,7 +1531,7 @@ function createStudentBlock_(body) {
 
 function deleteStudentBlock_(body) {
   const operatorAccount = requireField_(body && body.operatorAccount, "operatorAccount");
-  ensureOperatorIsAdmin_(operatorAccount);
+  ensureActiveStaffOperator_(operatorAccount);
   const studentId = String((body && body.studentId) || "").trim();
   if (!studentId) throw new Error("studentId 為必填");
 
@@ -1572,11 +1603,9 @@ function isDateWithinAnyRange_(dateText, ranges) {
   return false;
 }
 
-function computeVenueFreeStartHours_(intervals, openStart, openEnd, minStartHour) {
+function computeVenueFreeStartHours_(intervals, openStart, openEnd) {
   const free = [];
-  const effectiveOpenStart =
-    typeof minStartHour === "number" ? Math.max(openStart, minStartHour) : openStart;
-  for (var h = effectiveOpenStart; h < openEnd; h++) {
+  for (var h = openStart; h < openEnd; h++) {
     var blocked = false;
     for (var k = 0; k < intervals.length; k++) {
       if (h >= intervals[k].startHour && h < intervals[k].endHour) {
@@ -1595,14 +1624,7 @@ function venueHasFreeHourOnDate_(dateText, context, holidaySet) {
   if (isDateWithinAnyRange_(dateText, context.pauseRanges)) return false;
   const open = getVenueOpenHoursForDate_(dateText, holidaySet);
   const intervals = context.intervalsByDate[dateText] || [];
-  return (
-    computeVenueFreeStartHours_(
-      intervals,
-      open.openStart,
-      open.openEnd,
-      getVenueMinimumStartHourForDate_(dateText)
-    ).length > 0
-  );
+  return computeVenueFreeStartHours_(intervals, open.openStart, open.openEnd).length > 0;
 }
 
 function listVenueAvailability_(assetId, dateText) {
@@ -1643,19 +1665,11 @@ function listVenueAvailability_(assetId, dateText) {
     return base;
   }
 
-  const minimumStartHour = getVenueMinimumStartHourForDate_(date);
-  if (typeof minimumStartHour === "number" && minimumStartHour > open.openStart) {
-    base.occupied.push({
-      start: formatHour_(open.openStart),
-      end: formatHour_(Math.min(minimumStartHour, open.openEnd)),
-    });
-  }
-
   const intervals = context.intervalsByDate[date] || [];
-  base.occupied = base.occupied
-    .concat(intervals.map(function (iv) {
+  base.occupied = intervals
+    .map(function (iv) {
       return { start: formatHour_(iv.startHour), end: formatHour_(iv.endHour) };
-    }))
+    })
     .sort(function (a, b) {
       return a.start < b.start ? -1 : a.start > b.start ? 1 : 0;
     });
@@ -1688,11 +1702,6 @@ function validateVenueBooking_(assetId, startRaw, endRaw) {
   const endHour = getHourFromDateTime_(end);
   if (startHour >= endHour) {
     throw new Error("結束時間需晚於開始時間。");
-  }
-
-  const minimumStartHour = getVenueMinimumStartHourForDate_(date);
-  if (typeof minimumStartHour === "number" && startHour < minimumStartHour) {
-    throw new Error("此時段已開始或已結束，請改選之後的時段。");
   }
 
   const holidaySet = getHolidaySet_();
@@ -1871,7 +1880,7 @@ function ensureAssetsAvailableForPeriodExcludingRecord_(assetIds, borrowedAt, ex
 }
 
 function updateBorrowRecordExpectedReturnAt_(body) {
-  ensureOperatorIsAdmin_(body && body.operatorAccount);
+  ensureActiveStaffOperator_(body && body.operatorAccount);
   const recordId = requireField_(body && body.recordId, "recordId");
   const rawExpectedReturnAt = requireField_(body && body.expectedReturnAt, "expectedReturnAt");
 
@@ -2471,14 +2480,6 @@ function getVenueOpenHoursForDate_(dateText, holidaySet) {
     ? VENUE_WEEKEND_OPEN_HOUR
     : VENUE_WEEKDAY_OPEN_HOUR;
   return { openStart: openStart, openEnd: VENUE_CLOSE_HOUR };
-}
-
-function getVenueMinimumStartHourForDate_(dateText) {
-  const nowText = Utilities.formatDate(new Date(), APP_TIME_ZONE, "yyyy-MM-dd HH:mm");
-  if (dateText !== nowText.slice(0, 10)) return null;
-  const currentHour = Number(nowText.slice(11, 13));
-  const currentMinute = Number(nowText.slice(14, 16));
-  return currentMinute > 0 ? currentHour + 1 : currentHour;
 }
 
 function getAssetTypeMap_() {

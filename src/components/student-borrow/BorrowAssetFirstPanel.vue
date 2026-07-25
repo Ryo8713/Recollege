@@ -15,6 +15,7 @@
 					</option>
 				</select>
 			</label>
+
 			<label class="space-y-1 text-sm text-slate-700">
 				<span class="font-medium">設備</span>
 				<select
@@ -29,11 +30,12 @@
 				</select>
 			</label>
 		</div>
+
 		<p v-if="lookupResult.lookupError" class="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{{ lookupResult.lookupError }}</p>
 		<p v-else-if="lookupResult.lookupLoading" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">查詢中...</p>
 		<div v-else-if="lookupResult.lookupDates.length > 0" class="space-y-4">
 			<div v-if="selection.isLookupVenueSelected" class="space-y-3">
-				<p class="text-sm text-slate-600">以下列出未來 30 天內可借用日期與時段，點選日期後可繼續填單。</p>
+				<p class="text-sm text-slate-600">以下列出未來 30 天內可借用日期與時段，點選日期後可繼續填寫借用資訊。</p>
 				<p v-if="lookupResult.venueLookupPreviewLoading" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-600">
 					正在整理可借時段...
 				</p>
@@ -68,7 +70,7 @@
 				</section>
 			</div>
 			<div v-else class="space-y-4">
-				<p class="text-sm text-slate-600">點選日期後，頁面會切換至「依日期查詢可借項目」繼續填單。</p>
+				<p class="text-sm text-slate-600">以下列出未來 30 天內可借用日期，點選日期後可繼續填寫借用資訊。</p>
 				<section
 					v-for="section in lookupResult.lookupCalendarSections"
 					:key="section.key"
@@ -76,7 +78,7 @@
 				>
 					<h4 class="text-sm font-semibold text-slate-800">{{ section.label }}</h4>
 					<div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500">
-						<span v-for="weekday in weekdayLabels" :key="`${section.key}-${weekday}`">{{ weekday }}</span>
+						<span v-for="weekday in WEEKDAY_LABELS" :key="`${section.key}-${weekday}`">{{ weekday }}</span>
 					</div>
 					<div class="grid grid-cols-7 gap-1">
 						<template v-for="(cell, index) in section.dayCells" :key="`${section.key}-${index}`">
@@ -126,8 +128,6 @@ const emit = defineEmits<{
 	"update:selectedLookupEquipmentId": [value: string];
 	"apply-date": [date: string];
 }>();
-
-const weekdayLabels = WEEKDAY_LABELS;
 
 function onVenueChange(event: Event) {
 	const value = (event.target as HTMLSelectElement).value;

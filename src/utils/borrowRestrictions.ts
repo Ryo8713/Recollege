@@ -3,7 +3,7 @@ import { getTodayText } from "./date";
 
 export const BORROW_LEAD_WORKING_DAYS = 3;
 
-export const OVERDUE_BORROW_BLOCK_MESSAGE =
+export const BORROW_BLOCK_MESSAGE =
 	"您目前無法提出借用申請。請洽詢書院辦公室。";
 
 export function isOverdue(record: BorrowRecord): boolean {

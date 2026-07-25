@@ -36,7 +36,7 @@
 			</label>
 		</div>
 		<p v-if="form.studentId && isStudentBorrowBlocked" class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-			{{ OVERDUE_BORROW_BLOCK_MESSAGE }}
+			{{ BORROW_BLOCK_MESSAGE }}
 		</p>
 		<button
 			type="button"
@@ -51,7 +51,7 @@
 
 <script setup lang="ts">
 import type { BorrowFormState } from "../../types/borrowForm";
-import { OVERDUE_BORROW_BLOCK_MESSAGE } from "../../utils/borrowRestrictions";
+import { BORROW_BLOCK_MESSAGE } from "../../utils/borrowRestrictions";
 
 defineProps<{
 	form: BorrowFormState;

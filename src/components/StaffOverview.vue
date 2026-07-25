@@ -467,7 +467,7 @@
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                     <h3 class="font-semibold text-slate-900">進行中借用紀錄</h3>
-                    <p class="mt-0.5 text-xs text-slate-500">含待生效與租借中；管理員可於核准後、歸還前調整應歸還日期。</p>
+                    <p class="mt-0.5 text-xs text-slate-500">含待生效與租借中；職員可於核准後、歸還前調整應歸還日期。</p>
                 </div>
                 <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
                     共 {{ rentalStore.inProgressRecords.length }} 筆

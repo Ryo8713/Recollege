@@ -1,5 +1,5 @@
 <template>
-	<div v-if="authStore.staffRole === 'admin'" class="mt-2">
+	<div class="mt-2">
 		<div v-if="editing" class="space-y-2">
 			<p v-if="optionsLoading" class="text-xs text-slate-500">正在檢查可選時段…</p>
 			<div v-else class="flex flex-wrap items-end gap-2">
@@ -73,7 +73,7 @@ import {
 	computeValidVenueEndHours,
 	findConflictingBorrowRecord,
 	formatConflictMessage,
-} from "../utils/adminReturnDateOptions";
+} from "../utils/staffReturnDateOptions";
 import { formatDateZh } from "../utils/date";
 import type { BorrowRecord } from "../types/rental";
 

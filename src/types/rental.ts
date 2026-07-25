@@ -4,7 +4,6 @@ export type RecordStatus = "待生效" | "租借中" | "已歸還";
 export type ReturnRequestStatus = "" | "待審核";
 export type AssetType = "venue" | "equipment";
 export type AssetStatus = "可租借" | "已借出" | "停用中";
-export type StaffRole = "admin" | "staff";
 
 export interface Asset {
     id: string;
@@ -57,8 +56,6 @@ export interface BorrowRecord {
 export interface StaffAccountSummary {
     account: string;
     name: string;
-    role: StaffRole;
-    status: "active";
     createdAt: string;
     createdBy: string;
 }

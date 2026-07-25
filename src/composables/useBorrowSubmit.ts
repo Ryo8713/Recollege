@@ -3,7 +3,7 @@ import type { useRentalStore } from "../stores/rental";
 import type { BorrowConfirmSummary, BorrowFormState } from "../types/borrowForm";
 import { EMPTY_BORROW_FORM } from "../types/borrowForm";
 import type { Asset } from "../types/rental";
-import { BORROW_LEAD_WORKING_DAYS, OVERDUE_BORROW_BLOCK_MESSAGE } from "../utils/borrowRestrictions";
+import { BORROW_LEAD_WORKING_DAYS, BORROW_BLOCK_MESSAGE } from "../utils/borrowRestrictions";
 import { formatDateZh, isWorkingDayText } from "../utils/date";
 import { formatHourLabel } from "../utils/venueHours";
 
@@ -27,7 +27,7 @@ interface UseBorrowSubmitParams {
 	availableReturnDates: Ref<string[]>;
 	availabilityLoading: Ref<boolean>;
 	clearAvailabilityCaches: () => void;
-	ensureBlockedRangesLoaded: (force?: boolean) => Promise<boolean>;
+	loadBlockedRanges: (force?: boolean) => Promise<boolean>;
 	resetVenueSlots: () => void;
 	earliestBorrowDate: ComputedRef<string>;
 	isVenueSelected: ComputedRef<boolean>;
@@ -55,7 +55,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 		availableReturnDates,
 		availabilityLoading,
 		clearAvailabilityCaches,
-		ensureBlockedRangesLoaded,
+		loadBlockedRanges,
 		resetVenueSlots,
 		earliestBorrowDate,
 		isVenueSelected,
@@ -121,7 +121,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 			return false;
 		}
 		if (isStudentBorrowBlocked.value) {
-			borrowError.value = OVERDUE_BORROW_BLOCK_MESSAGE;
+			borrowError.value = BORROW_BLOCK_MESSAGE;
 			return false;
 		}
 		if (!form.borrowerGroup || !form.activityName) {
@@ -151,7 +151,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 			}
 			const availableStartHours = new Set(venueStartHours.value);
 			if (selectedVenueSlotHours.value.some((hour) => !availableStartHours.has(hour))) {
-				borrowError.value = "所選時段已開始或已不可借，請重新選擇時段。";
+				borrowError.value = "所選時段已不可借，請重新選擇時段。";
 				return false;
 			}
 			return true;
@@ -211,7 +211,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 				expectedReturnAt: expectedReturnAtPayload,
 			});
 			clearAvailabilityCaches();
-			void ensureBlockedRangesLoaded(true);
+			void loadBlockedRanges(true);
 			selectedAssetId.value = "";
 			selectedAssetType.value = "";
 			availableReturnDates.value = [];

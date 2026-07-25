@@ -42,7 +42,7 @@ export function findConflictingBorrowRecord(
 	return null;
 }
 
-/** 管理員可選的設備應歸還日：僅工作天，並排除他人借用、資產停用、全校暫停衝突。 */
+/** 職員可選的設備應歸還日：僅工作天，並排除他人借用、資產停用、全校暫停衝突。 */
 export function computeValidEquipmentReturnDates(
 	record: BorrowRecord,
 	allRecords: BorrowRecord[],
@@ -74,7 +74,7 @@ function formatHour(hour: number): string {
 	return `${String(hour).padStart(2, "0")}:00`;
 }
 
-/** 管理員可選的空間結束整點（不含與他人重疊的時段）。 */
+/** 職員可選的空間結束整點（不含與他人重疊的時段）。 */
 export function computeValidVenueEndHours(
 	record: BorrowRecord,
 	availability: VenueAvailability,

@@ -6,7 +6,6 @@ import type {
     Holiday,
     GlobalPauseRange,
     StaffAccountSummary,
-    StaffRole,
     StudentBlock,
     VenueAvailability,
 } from "../types/rental";
@@ -60,11 +59,6 @@ interface StaffLoginResponse {
     ok: boolean;
     account: string;
     name: string;
-    role: StaffRole;
-}
-
-export function hasApiBaseUrl(): boolean {
-    return Boolean(API_BASE_URL?.trim());
 }
 
 function buildApiUrl(path: string, query?: Record<string, string | undefined>): string {
@@ -132,8 +126,6 @@ async function request<T>(path: string, init?: RequestInit, query?: Record<strin
 }
 
 export const sheetsApi = {
-    hasApiBaseUrl,
-
     async fetchAssets(): Promise<Asset[]> {
         return request<Asset[]>("assets");
     },

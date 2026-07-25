@@ -1,6 +1,6 @@
 import { computed, ref, watch, type Ref } from "vue";
 import type { VenueAvailability } from "../types/rental";
-import { formatHourRangeLabel, getMinimumVenueStartHour } from "../utils/venueHours";
+import { formatHourRangeLabel } from "../utils/venueHours";
 
 export interface VenueLookupPreview {
 	date: string;
@@ -37,9 +37,7 @@ export function useVenueLookupPreview(options: {
 		const slots: string[] = [];
 		const openStart = Number(availability.openStart.slice(0, 2));
 		const openEnd = Number(availability.openEnd.slice(0, 2));
-		const minimumStartHour = getMinimumVenueStartHour(availability.date);
-		const effectiveOpenStart = minimumStartHour == null ? openStart : Math.max(openStart, minimumStartHour);
-		for (let hour = effectiveOpenStart; hour < openEnd; hour += 1) {
+		for (let hour = openStart; hour < openEnd; hour += 1) {
 			if (!occupied.has(hour)) {
 				slots.push(formatHourRangeLabel(hour));
 			}
