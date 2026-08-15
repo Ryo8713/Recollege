@@ -96,11 +96,11 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	}
 
 	async function loadBlockedRanges(force = false): Promise<boolean> {
-		if (!force && !shouldRefreshBlockedRanges()) {
-			return true;
-		}
 		if (!force && blockedRangesInFlight) {
 			return blockedRangesInFlight;
+		}
+		if (!force && !shouldRefreshBlockedRanges()) { //check cache is still valid
+			return true;
 		}
 
 		const seq = ++blockedRangesRequestSeq.value;
@@ -108,13 +108,18 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			try {
 				const response = await sheetsApi.fetchAssetBlockedRanges();
 				if (seq !== blockedRangesRequestSeq.value) {
-					return !shouldRefreshBlockedRanges();
+					if (blockedRangesInFlight) return blockedRangesInFlight; // 改等最新
+					return !shouldRefreshBlockedRanges(); // 最新已結束（或被清掉）才看快照
 				}
 				blockedRangesByAssetId.value = response.blockedRangesByAssetId ?? {};
 				globalPauseRanges.value = response.globalPauseRanges ?? [];
 				blockedRangesLoadedAt.value = Date.now();
 				return true;
 			} catch (_error) {
+				if (seq !== blockedRangesRequestSeq.value) {
+					if (blockedRangesInFlight) return blockedRangesInFlight;
+					return !shouldRefreshBlockedRanges();
+				}
 				return false;
 			} finally {
 				if (seq === blockedRangesRequestSeq.value) {
@@ -126,16 +131,8 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return request;
 	}
 
-	function isDateRangeOverlapping(startA: string, endA: string, startB: string, endB: string): boolean {
-		return startA <= endB && endA >= startB;
-	}
-
-	function isBlockedByRanges(
-		startDate: string,
-		endDate: string,
-		ranges: Array<{ start: string; end: string }>,
-	): boolean {
-		return ranges.some((range) => isDateRangeOverlapping(range.start, range.end, startDate, endDate));
+	function isBlockedByRanges(startDate: string, endDate: string, ranges: Array<{ start: string; end: string }>,): boolean {
+		return ranges.some( (range) => range.start <= endDate && range.end >= startDate);
 	}
 
 	function isBlockedOnDate(dateText: string, ranges: Array<{ start: string; end: string }>): boolean {
@@ -156,7 +153,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		borrowedAt: string,
 		ranges: Array<{ start: string; end: string }>,
 	): boolean {
-		if (!isWorkingDayText(borrowedAt, holidayDates.value)) return false;
 		for (const expectedReturnAt of getEquipmentReturnCandidateDates(borrowedAt, holidayDates.value)) {
 			if (!isBlockedByRanges(borrowedAt, expectedReturnAt, ranges)) {
 				return true;

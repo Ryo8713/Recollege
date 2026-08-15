@@ -64,7 +64,6 @@ export function computeNextWorkingDay(dateText: string, holidayDates: Set<string
 	return date;
 }
 
-// 設備可選歸還日：借用日～下一個工作天（含）之間的所有工作天。
 export function getEquipmentReturnCandidateDates(
 	borrowedAt: string,
 	holidayDates: Set<string>,
