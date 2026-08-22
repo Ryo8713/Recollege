@@ -201,60 +201,22 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		const allAssets = getAssets();
 		for (let i = 0; i < allAssets.length; i += 1) {
 			const asset = allAssets[i];
-			if (asset.status === "停用中") continue;
-			if (isGloballyClosedDate(borrowedAt)) continue;
-			const blockedRanges = getCombinedBlockedRanges(asset.id);
+			const blockedRanges = blockedRangesByAssetId.value[asset.id] ?? [];
 			if (asset.type === "venue") {
 				if (!isBlockedOnDate(borrowedAt, blockedRanges)) venues.push(asset);
 				continue;
 			}
 			if (!isWorkingDayText(borrowedAt, holidayDates.value)) continue;
-			if (!hasAnyAvailableReturnDate(borrowedAt, blockedRanges)) continue;
+			if (isBlockedOnDate(borrowedAt, blockedRanges)) continue;
 			if (asset.type === "equipment") equipments.push(asset);
 		}
 		return { venues, equipments };
-	}
-
-	// ===== 可借項目清單（date-first）=====
-	async function fetchAvailabilityCached(borrowedAt: string): Promise<{ venues: Asset[]; equipments: Asset[] }> {
-		const cached = availabilityCache.get(borrowedAt);
-		if (cached) return cached;
-
-		const existingPromise = availabilityInFlight.get(borrowedAt);
-		if (existingPromise) return existingPromise;
-
-		const request = sheetsApi
-			.fetchAvailabilityByStartDate(borrowedAt)
-			.then((result) => {
-				const normalized = {
-					venues: result.venues ?? [],
-					equipments: result.equipments ?? [],
-				};
-				availabilityCache.set(borrowedAt, normalized);
-				return normalized;
-			})
-			.finally(() => {
-				availabilityInFlight.delete(borrowedAt);
-			});
-		availabilityInFlight.set(borrowedAt, request);
-		return request;
 	}
 
 	function applyAvailabilityResult(result: { venues: Asset[]; equipments: Asset[] }) {
 		availableVenues.value = result.venues;
 		availableEquipments.value = result.equipments;
 
-		const availableVenueIds = new Set(result.venues.map((v) => v.id));
-		const availableEquipmentIds = new Set(result.equipments.map((e) => e.id));
-
-		const stillAvailable =
-			availableVenueIds.has(selectedAssetId.value) || availableEquipmentIds.has(selectedAssetId.value);
-		if (selectedAssetId.value && !stillAvailable) {
-			selectedAssetId.value = "";
-			selectedAssetType.value = "";
-			availableReturnDates.value = [];
-			form.expectedReturnAt = "";
-		}
 		if (form.borrowedAt && result.venues.length > 0) {
 			precomputeVenueAvailabilityInBackground(
 				result.venues.map((venue) => venue.id),
@@ -289,25 +251,47 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		try {
 			const blockedRangesReady = await loadBlockedRanges();
 			if (seq !== availabilityRequestSeq.value) return;
-
+			
+			if (isGloballyClosedDate(form.borrowedAt)) {
+				availableVenues.value = [];
+				availableEquipments.value = [];
+				availableReturnDates.value = [];
+				availabilityError.value = "";
+				return;
+			}
 			if (blockedRangesReady && getAssets().length > 0) {
 				const localResult = computeAvailableAssetsLocally(form.borrowedAt);
 				availabilityCache.set(form.borrowedAt, localResult);
 				applyAvailabilityResult(localResult);
 				return;
 			}
-
-			const apiResult = await fetchAvailabilityCached(form.borrowedAt);
-			if (seq !== availabilityRequestSeq.value) return;
-			applyAvailabilityResult(apiResult);
+			else {
+				availableVenues.value = [];
+				availableEquipments.value = [];
+				availableReturnDates.value = [];
+				availabilityError.value = "本地計算失敗";
+			}
 		} catch (error) {
 			if (seq !== availabilityRequestSeq.value) return;
 			availableVenues.value = [];
 			availableEquipments.value = [];
 			availableReturnDates.value = [];
-			availabilityError.value = error instanceof Error ? error.message : "讀取可借項目失敗";
+			availabilityError.value = error instanceof Error ? error.message : "loadAvailabilityerror";
 		} finally {
 			if (seq === availabilityRequestSeq.value) {
+				if (selectedAssetId.value) {
+					const availableIds = new Set([
+						...availableVenues.value.map((v) => v.id),
+						...availableEquipments.value.map((e) => e.id),
+					]);
+					
+					if (!availableIds.has(selectedAssetId.value)) {
+						selectedAssetId.value = "";
+						selectedAssetType.value = "";
+						availableReturnDates.value = [];
+						form.expectedReturnAt = "";
+					}
+				}
 				availabilityLoading.value = false;
 			}
 		}
@@ -329,9 +313,9 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 
 		returnDateLoading.value = true;
 		try {
-			const loaded = await loadBlockedRanges();
+			const blockedRanges = await loadBlockedRanges();
 			if (seq !== returnDateRequestSeq.value) return;
-			if (loaded) {
+			if (blockedRanges) {
 				const dates = computeAvailableReturnDatesLocally(selectedAssetId.value, form.borrowedAt);
 				returnDateCache.set(key, dates);
 				availableReturnDates.value = dates;
