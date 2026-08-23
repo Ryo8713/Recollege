@@ -158,7 +158,7 @@ const {
 	venueAvailabilityLoading,
 	venueAvailabilityError,
 	venueStartHours,
-	fetchVenueAvailabilityCached,
+	fetchVenueOccupiedSlotsCached,
 	selectAsset,
 	applyBorrowDate,
 	clearAvailabilityCaches,
@@ -222,7 +222,7 @@ const {
 	lookupDates,
 	lookupLoading,
 	lookupError,
-	fetchVenueAvailabilityCached,
+	fetchVenueOccupiedSlotsCached,
 });
 
 const remoteRefreshContext: {

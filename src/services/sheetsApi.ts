@@ -239,8 +239,8 @@ export const sheetsApi = {
         });
     },
 
-    async fetchVenueAvailability(assetId: string, date: string): Promise<VenueAvailability> {
-        return request<VenueAvailability>("venue-availability", undefined, { assetId, date });
+    async fetchVenueOccupiedSlots(assetId: string, date: string): Promise<VenueAvailability> {
+        return request<VenueAvailability>("venue-occupied-slots", undefined, { assetId, date });
     },
 
     async createAssetPauseRange(payload: {

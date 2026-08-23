@@ -83,7 +83,7 @@ export function computeValidVenueEndHours(
 
 	const startHour = parseHour(record.borrowedAt.slice(11, 16));
 	const currentEndHour = parseHour(record.expectedReturnAt.slice(11, 16));
-	const openEnd = parseHour(availability.openEnd);
+	const openEnd = availability.openEnd ? parseHour(availability.openEnd) : 23;
 
 	const otherIntervals = availability.occupied
 		.map((interval) => ({

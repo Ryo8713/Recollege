@@ -115,10 +115,10 @@ function routeRequest_(method, e) {
       return jsonResponse_(readStudentBlocks_());
     }
 
-    if (path === "venue-availability" && method === "GET") {
+    if (path === "venue-occupied-slots" && method === "GET") {
       const assetId = requireField_(e && e.parameter && e.parameter.assetId, "assetId");
       const date = requireField_(e && e.parameter && e.parameter.date, "date");
-      return jsonResponse_(listVenueAvailability_(assetId, date));
+      return jsonResponse_(listVenueOccupiedSlots_(assetId, date));
     }
 
     if (path === "staff-login" && method === "POST") {
@@ -1272,7 +1272,7 @@ function listAvailableReturnDates_(assetId, borrowedAt) {
     return { assetId: assetId, borrowedAt: borrowedAt, dates: [] };
   }
   if (targetAsset.type === "venue") {
-    // 空間以小時計，歸還日由 venue-availability 端點處理
+    // 空間以小時計，歸還日由 venue-occupied-slots 端點處理
     return { assetId: assetId, borrowedAt: borrowedAt, dates: [] };
   }
 
@@ -1627,7 +1627,7 @@ function venueHasFreeHourOnDate_(dateText, context, holidaySet) {
   return computeVenueFreeStartHours_(intervals, open.openStart, open.openEnd).length > 0;
 }
 
-function listVenueAvailability_(assetId, dateText) {
+function listVenueOccupiedSlots_(assetId, dateText) {
   const date = requireDateText_(dateText, "date");
   const assets = readAssets_();
   const target = assets.find(function (asset) {
@@ -1636,44 +1636,16 @@ function listVenueAvailability_(assetId, dateText) {
   if (!target) throw new Error("找不到資產：" + assetId);
   if (target.type !== "venue") throw new Error("此資產非空間，無法查詢小時可借時段");
 
-  const holidaySet = getHolidaySet_();
-  const open = getVenueOpenHoursForDate_(date, holidaySet);
-  const base = {
-    assetId: assetId,
-    date: date,
-    openStart: formatHour_(open.openStart),
-    openEnd: formatHour_(open.openEnd),
-    isHoliday: isHolidayLikeDate_(date, holidaySet),
-    occupied: [],
-    closed: false,
-  };
-
-  if (target.status === "停用中" || date < getTodayText_()) {
-    base.closed = true;
-    return base;
-  }
-
-  if (isGloballyClosedDate_(date)) {
-    base.closed = true;
-    base.occupied = [{ start: formatHour_(open.openStart), end: formatHour_(open.openEnd) }];
-    return base;
-  }
-
   const context = getVenueBookingContext_(assetId);
-  if (isDateWithinAnyRange_(date, context.pauseRanges)) {
-    base.occupied = [{ start: formatHour_(open.openStart), end: formatHour_(open.openEnd) }];
-    return base;
-  }
-
   const intervals = context.intervalsByDate[date] || [];
-  base.occupied = intervals
+  const occupiedIntervals = intervals
     .map(function (iv) {
       return { start: formatHour_(iv.startHour), end: formatHour_(iv.endHour) };
     })
     .sort(function (a, b) {
       return a.start < b.start ? -1 : a.start > b.start ? 1 : 0;
     });
-  return base;
+  return { occupied: occupiedIntervals };
 }
 
 function validateVenueBooking_(assetId, startRaw, endRaw) {

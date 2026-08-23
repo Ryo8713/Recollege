@@ -151,7 +151,7 @@ async function loadEditOptions() {
 			const assetId = props.record.assetIds[0];
 			const date = props.record.borrowedAt.slice(0, 10);
 			if (!assetId || !date) return;
-			const availability = await sheetsApi.fetchVenueAvailability(assetId, date);
+			const availability = await sheetsApi.fetchVenueOccupiedSlots(assetId, date);
 			const hours = computeValidVenueEndHours(props.record, availability);
 			validVenueEndHours.value = hours;
 			editValue.value = pickInitialVenueHour(hours);

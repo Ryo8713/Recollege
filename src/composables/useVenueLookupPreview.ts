@@ -12,7 +12,7 @@ export function useVenueLookupPreview(options: {
 	selectedLookupVenueId: Ref<string>;
 	lookupDates: Ref<string[]>;
 	earliestBorrowDate: Ref<string>;
-	fetchVenueAvailabilityCached: (assetId: string, date: string) => Promise<VenueAvailability>;
+	fetchVenueOccupiedSlotsCached: (assetId: string, date: string) => Promise<VenueAvailability>;
 }) {
 	const venueLookupPreviews = ref<VenueLookupPreview[]>([]);
 	const venueLookupPreviewLoading = ref(false);
@@ -63,7 +63,7 @@ export function useVenueLookupPreview(options: {
 						nextIndex += 1;
 						if (seq !== venueLookupPreviewSeq.value) return;
 
-						const availability = await options.fetchVenueAvailabilityCached(
+						const availability = await options.fetchVenueOccupiedSlotsCached(
 							options.selectedLookupVenueId.value,
 							date,
 						);

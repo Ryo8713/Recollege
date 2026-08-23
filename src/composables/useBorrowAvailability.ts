@@ -1,6 +1,7 @@
 import { computed, onMounted, ref, watch, type Ref } from "vue";
 import { sheetsApi } from "../services/sheetsApi";
 import { addDays, getEquipmentReturnCandidateDates, isWorkingDayText } from "../utils/date";
+import { getVenueOpenHours } from "../utils/venueHours";
 import type { Asset, VenueAvailability } from "../types/rental";
 
 type BorrowMode = "borrow" | "return";
@@ -58,6 +59,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const lookupDatesInFlight = new Map<string, Promise<string[]>>();
 
 	const venueAvailability = ref<VenueAvailability | null>(null);
+	const venueStartHours = ref<number[]>([]);
 	const venueAvailabilityLoading = ref(false);
 	const venueAvailabilityError = ref("");
 	const venueAvailabilityRequestSeq = ref(0);
@@ -448,17 +450,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return set;
 	});
 
-	const venueStartHours = computed<number[]>(() => {
-		const availability = venueAvailability.value;
-		if (!availability || availability.closed) return [];
-		const openStart = toHour(availability.openStart);
-		const openEnd = toHour(availability.openEnd);
-		return Array.from({ length: openEnd - openStart }, (_, i) => openStart + i).filter(
-			(hour) => !venueOccupiedHourSet.value.has(hour),
-		);
-	});
-
-	async function fetchVenueAvailabilityCached(assetId: string, date: string): Promise<VenueAvailability> {
+	async function fetchVenueOccupiedSlotsCached(assetId: string, date: string): Promise<VenueAvailability> {
 		const key = getVenueAvailabilityKey(assetId, date);
 		const cached = venueAvailabilityCache.get(key);
 		if (cached) return cached;
@@ -467,10 +459,27 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		if (existingPromise) return existingPromise;
 
 		const request = sheetsApi
-			.fetchVenueAvailability(assetId, date)
+			.fetchVenueOccupiedSlots(assetId, date)
 			.then((result) => {
-				venueAvailabilityCache.set(key, result);
-				return result;
+				const open = getVenueOpenHours(date, holidayDates.value);
+				const occupied = result.occupied ?? [];
+				const occupiedHours = new Set<number>();
+				for (const interval of occupied) {
+					for (let hour = toHour(interval.start); hour < toHour(interval.end); hour += 1) {
+						occupiedHours.add(hour);
+					}
+				}
+				const view = {
+					...result,
+					assetId,
+					date,
+					openStart: `${String(open.start).padStart(2, "0")}:00`,
+					openEnd: `${String(open.end).padStart(2, "0")}:00`,
+					isHoliday: open.start === 8,
+					closed: Array.from({ length: open.end - open.start }, (_, index) => open.start + index).every((hour) => occupiedHours.has(hour)),
+				};
+				venueAvailabilityCache.set(key, view);
+				return view;
 			})
 			.finally(() => {
 				venueAvailabilityInFlight.delete(key);
@@ -479,25 +488,33 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return request;
 	}
 
-	async function loadVenueAvailability(assetId: string, date: string) {
-		venueAvailability.value = null;
+	async function loadVenueAvailability(assetId: string, date: string): Promise<number[]> {
+		venueStartHours.value = [];
 		venueAvailabilityError.value = "";
-		if (!assetId || !date) return;
+		if (!assetId || !date) return [];
 		const seq = ++venueAvailabilityRequestSeq.value;
-		const cached = venueAvailabilityCache.get(getVenueAvailabilityKey(assetId, date));
-		if (cached) {
-			venueAvailability.value = cached;
-			venueAvailabilityLoading.value = false;
-			return;
-		}
 		venueAvailabilityLoading.value = true;
 		try {
-			const result = await fetchVenueAvailabilityCached(assetId, date);
-			if (seq !== venueAvailabilityRequestSeq.value) return;
-			venueAvailability.value = result;
+			const availability = await fetchVenueOccupiedSlotsCached(assetId, date);
+			venueAvailability.value = availability;
+			const open = getVenueOpenHours(date, holidayDates.value);
+			const occupiedHours = new Set<number>();
+			for (const interval of availability.occupied) {
+				for (let hour = toHour(interval.start); hour < toHour(interval.end); hour += 1) {
+					occupiedHours.add(hour);
+				}
+			}
+			const availableHours = Array.from(
+				{ length: open.end - open.start },
+				(_, index) => open.start + index,
+			).filter((hour) => !occupiedHours.has(hour));
+			if (seq !== venueAvailabilityRequestSeq.value) return [];
+			venueStartHours.value = availableHours;
+			return availableHours;
 		} catch (error) {
-			if (seq !== venueAvailabilityRequestSeq.value) return;
+			if (seq !== venueAvailabilityRequestSeq.value) return [];
 			venueAvailabilityError.value = error instanceof Error ? error.message : "讀取可借時段失敗";
+			return [];
 		} finally {
 			venueAvailabilityLoading.value = false;
 		}
@@ -529,7 +546,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			if (venueAvailabilityCache.has(key)) continue;
 
 			venuePrecomputeActiveCount += 1;
-			void fetchVenueAvailabilityCached(job.assetId, job.date)
+				void fetchVenueOccupiedSlotsCached(job.assetId, job.date)
 				.catch(() => undefined)
 				.finally(() => {
 					venuePrecomputeActiveCount -= 1;
@@ -698,7 +715,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		venueAvailabilityLoading,
 		venueAvailabilityError,
 		venueStartHours,
-		fetchVenueAvailabilityCached,
+		fetchVenueOccupiedSlotsCached,
 		selectAsset,
 		applyBorrowDate,
 		clearAvailabilityCaches,
