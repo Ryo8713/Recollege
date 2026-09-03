@@ -424,7 +424,7 @@
                         :key="`due24-${record.id}`"
                         class="rounded-lg border border-blue-100 bg-white p-2"
                     >
-                        <p class="text-sm font-semibold text-slate-900">{{ record.itemName }}</p>
+                        <p class="text-sm font-semibold text-slate-900">{{ getRecordItemLabel(record) }}</p>
                         <p class="text-xs text-slate-600">{{ record.studentId }} / {{ record.studentName }}</p>
                         <p class="text-xs font-semibold text-blue-800">應還：{{ formatTemporalZh(record.expectedReturnAt) }}</p>
                     </article>
@@ -437,7 +437,7 @@
                         :key="`pending-return-${app.id}`"
                         class="rounded-lg border border-amber-100 bg-white p-2"
                     >
-                        <p class="text-sm font-semibold text-slate-900">{{ app.itemName }}</p>
+                        <p class="text-sm font-semibold text-slate-900">{{ getReviewedItemLabel(app) }}</p>
                         <p class="text-xs text-slate-600">{{ app.studentId }} / {{ app.studentName }}</p>
                         <p class="text-xs font-semibold text-amber-800">申請建立：{{ formatDateZh(app.createdAt) }}</p>
                     </article>
@@ -453,7 +453,7 @@
                 :key="`overdue-${record.id}`"
                 class="mb-2 rounded-xl border border-red-100 bg-white p-3"
             >
-                <p class="font-semibold text-slate-900">{{ record.itemName }}</p>
+                <p class="font-semibold text-slate-900">{{ getRecordItemLabel(record) }}</p>
                 <p class="text-sm text-slate-600">{{ record.studentId }} / {{ record.studentName }}</p>
                 <p class="text-sm font-semibold text-red-700">
                     應還：{{ formatTemporalZh(record.expectedReturnAt) }} ｜ 逾期 {{ getOverdueDays(record.expectedReturnAt) }} 天
@@ -480,7 +480,7 @@
                 class="mb-2 rounded-xl border border-slate-100 bg-slate-50 p-3"
             >
                 <div class="flex flex-wrap items-center gap-2">
-                    <p class="font-medium text-slate-900">{{ record.itemName }}</p>
+                    <p class="font-medium text-slate-900">{{ getRecordItemLabel(record) }}</p>
                     <span
                         v-if="record.status === '待生效'"
                         class="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800"
@@ -558,7 +558,7 @@ import { formatDateZh, formatTemporalZh } from "../utils/date";
 import StaffAssetManager from "./StaffAssetManager.vue";
 import BorrowingRulesManager from "./BorrowingRulesManager.vue";
 import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
-import type { BorrowApplication } from "../types/rental";
+import { getItemTypeLabel, type BorrowApplication, type BorrowRecord } from "../types/rental";
 
 const rentalStore = useRentalStore();
 const authStore = useAuthStore();
@@ -638,23 +638,22 @@ watch(
   { immediate: true },
 );
 
-function getAssetTypeLabel(app: BorrowApplication): "空間" | "設備" | "未分類" {
-  const itemName = String(app.itemName || "").trim();
-  if (itemName.startsWith("空間") || itemName.startsWith("場地")) return "空間";
-  if (itemName.startsWith("設備") || itemName.startsWith("器材")) return "設備";
-  return "未分類";
+function getAssetTypeLabel(app: BorrowApplication): string {
+  return getItemTypeLabel(app.itemType) || "未分類";
 }
 
-function getItemNameWithoutType(app: BorrowApplication): string {
-  return String(app.itemName || "")
-    .replace(/^(空間|場地|設備|器材)\s*[:：]\s*/, "")
-    .trim() || "未記錄";
+function formatItemLabel(item: Pick<BorrowApplication, "itemType" | "itemName">): string {
+  const itemName = String(item.itemName || "").trim() || "未記錄";
+  const typeLabel = getItemTypeLabel(item.itemType);
+  return typeLabel ? `${itemName}(${typeLabel})` : itemName;
 }
 
 function getReviewedItemLabel(app: BorrowApplication): string {
-  const typeLabel = getAssetTypeLabel(app);
-  const itemName = getItemNameWithoutType(app);
-  return typeLabel === "未分類" ? itemName : `${itemName}(${typeLabel})`;
+  return formatItemLabel(app);
+}
+
+function getRecordItemLabel(record: BorrowRecord): string {
+  return formatItemLabel(record);
 }
 
 function getReviewedCardBorderClass(app: BorrowApplication): string {
@@ -665,9 +664,8 @@ function getReviewedCardBorderClass(app: BorrowApplication): string {
 
 function matchAssetFilter(app: BorrowApplication): boolean {
   if (assetFilter.value === "all") return true;
-  const typeLabel = getAssetTypeLabel(app);
-  if (assetFilter.value === "venue") return typeLabel === "空間";
-  if (assetFilter.value === "equipment") return typeLabel === "設備";
+  if (assetFilter.value === "venue") return app.itemType === "venue";
+  if (assetFilter.value === "equipment") return app.itemType === "equipment";
   return true;
 }
 

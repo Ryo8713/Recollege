@@ -2,14 +2,14 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAssetsStore } from "./assets";
-import { getTodayText } from "../utils/date";
+import { getTodayText, getNowDateTimeText } from "../utils/date";
 import {
     hasOverdueBorrowRestriction,
     isOverdue,
     BORROW_BLOCK_MESSAGE,
     wasReturnedLate,
 } from "../utils/borrowRestrictions";
-import type { BorrowApplication, BorrowRecord, StudentBlock } from "../types/rental";
+import type { BorrowApplication, BorrowRecord, ItemType, StudentBlock } from "../types/rental";
 
 export interface ReturnSearchRecord extends BorrowRecord {
     returnPending: boolean;
@@ -184,6 +184,7 @@ export const useRentalStore = defineStore("rental", () => {
         borrowerGroup: string;
         mentorName: string;
         activityName: string;
+        itemType: ItemType;
         itemName: string;
         assetIds: string[];
         borrowedAt: string;
@@ -202,7 +203,7 @@ export const useRentalStore = defineStore("rental", () => {
         type: "借用申請",
         ...payload,
         status: "待審核",
-        createdAt: new Date().toISOString(),
+        createdAt: getNowDateTimeText(),
         };
         applications.value.unshift(application);
     }
@@ -244,6 +245,7 @@ export const useRentalStore = defineStore("rental", () => {
                 borrowerGroup: app.borrowerGroup,
                 mentorName: app.mentorName,
                 activityName: app.activityName,
+                itemType: app.itemType,
                 itemName: app.itemName,
                 assetIds: app.assetIds,
                 borrowedAt: app.borrowedAt,
@@ -407,6 +409,7 @@ export const useRentalStore = defineStore("rental", () => {
             borrowerGroup: record.borrowerGroup,
             mentorName: record.mentorName,
             activityName: record.activityName,
+            itemType: record.itemType,
             itemName: record.itemName,
             assetIds: record.assetIds,
             borrowedAt: record.borrowedAt,
@@ -425,13 +428,14 @@ export const useRentalStore = defineStore("rental", () => {
         borrowerGroup: record.borrowerGroup,
         mentorName: record.mentorName,
         activityName: record.activityName,
+        itemType: record.itemType,
         itemName: record.itemName,
         assetIds: record.assetIds,
         borrowedAt: record.borrowedAt,
         expectedReturnAt: record.expectedReturnAt,
         recordId: payload.recordId,
         status: "待審核",
-        createdAt: new Date().toISOString(),
+        createdAt: getNowDateTimeText(),
         };
         applications.value.unshift(app);
         record.returnRequestStatus = "待審核";

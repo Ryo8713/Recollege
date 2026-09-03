@@ -3,13 +3,17 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
   const studentId = String(appRow[2] || "").trim();
   const studentName = String(appRow[3] || "").trim();
   const studentEmail = String(appRow[5] || "").trim();
-  const itemName = String(appRow[6] || "").trim();
-  const borrowedAt = normalizeTemporalText_(appRow[8]);
-  const expectedReturnAt = normalizeTemporalText_(appRow[9]);
-  const borrowerGroup = String(appRow[15] || "").trim();
-  const mentorName = String(appRow[16] || "").trim();
-  const activityName = String(appRow[17] || "").trim();
-  const rejectionReason = String(appRow[18] || "").trim();
+  const item = resolveItemTypeAndName_(
+    appRow[APP_COL_ITEM_TYPE],
+    appRow[APP_COL_ITEM_NAME],
+    parseStringArray_(appRow[APP_COL_ASSET_IDS])
+  );
+  const borrowedAt = normalizeTemporalText_(appRow[APP_COL_BORROWED_AT]);
+  const expectedReturnAt = normalizeTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT]);
+  const borrowerGroup = String(appRow[APP_COL_BORROWER_GROUP] || "").trim();
+  const mentorName = String(appRow[APP_COL_MENTOR_NAME] || "").trim();
+  const activityName = String(appRow[APP_COL_ACTIVITY_NAME] || "").trim();
+  const rejectionReason = String(appRow[APP_COL_REJECTION_REASON] || "").trim();
 
   if (!studentEmail) return;
 
@@ -27,7 +31,7 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
     "。\n\n" +
     rejectionReasonLine +
     "借用項目：" +
-    formatItemNameForEmail_(itemName) +
+    formatItemNameForEmail_(item.itemType, item.itemName) +
     "\n" +
     "借用期間：" +
     formatReviewPeriodForEmail_(borrowedAt, expectedReturnAt) +
@@ -54,8 +58,10 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
   MailApp.sendEmail(studentEmail, subject, body);
 }
 
-function formatItemNameForEmail_(itemName) {
-  return String(itemName || "").replace(/^(空間|場地|設備|器材)\s*[:：]\s*/, "").trim() || "未記錄";
+function formatItemNameForEmail_(itemType, itemName) {
+  const name = String(itemName || "").trim() || "未記錄";
+  const typeLabel = formatItemTypeLabel_(itemType);
+  return typeLabel ? name + "（" + typeLabel + "）" : name;
 }
 
 function formatReviewPeriodForEmail_(start, end) {

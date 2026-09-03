@@ -19,6 +19,7 @@ const BORROW_APPLICATION_HEADERS = [
   "studentPhone",
   "studentEmail",
   "itemName",
+  "itemType",
   "assetIds",
   "borrowedAt",
   "expectedReturnAt",
@@ -32,6 +33,21 @@ const BORROW_APPLICATION_HEADERS = [
   "activityName",
   "rejectionReason",
 ];
+// 欄位索引（0-based）；itemType 緊接 itemName 之後
+const APP_COL_ITEM_NAME = 6;
+const APP_COL_ITEM_TYPE = 7;
+const APP_COL_ASSET_IDS = 8;
+const APP_COL_BORROWED_AT = 9;
+const APP_COL_EXPECTED_RETURN_AT = 10;
+const APP_COL_STATUS = 11;
+const APP_COL_CREATED_AT = 12;
+const APP_COL_REVIEWED_BY = 13;
+const APP_COL_REVIEWED_AT = 14;
+const APP_COL_RECORD_ID = 15;
+const APP_COL_BORROWER_GROUP = 16;
+const APP_COL_MENTOR_NAME = 17;
+const APP_COL_ACTIVITY_NAME = 18;
+const APP_COL_REJECTION_REASON = 19;
 const BORROW_RECORD_HEADERS = [
   "id",
   "studentId",
@@ -39,6 +55,7 @@ const BORROW_RECORD_HEADERS = [
   "studentPhone",
   "studentEmail",
   "itemName",
+  "itemType",
   "assetIds",
   "borrowedAt",
   "expectedReturnAt",
@@ -49,7 +66,22 @@ const BORROW_RECORD_HEADERS = [
   "mentorName",
   "activityName",
 ];
+// 欄位索引（0-based）；itemType 緊接 itemName 之後
+const RECORD_COL_ITEM_NAME = 5;
+const RECORD_COL_ITEM_TYPE = 6;
+const RECORD_COL_ASSET_IDS = 7;
+const RECORD_COL_BORROWED_AT = 8;
+const RECORD_COL_EXPECTED_RETURN_AT = 9;
+const RECORD_COL_RETURNED_AT = 10;
+const RECORD_COL_STATUS = 11;
+const RECORD_COL_RETURN_REQUEST_STATUS = 12;
+const RECORD_COL_BORROWER_GROUP = 13;
+const RECORD_COL_MENTOR_NAME = 14;
+const RECORD_COL_ACTIVITY_NAME = 15;
 const VALID_TYPES = ["venue", "equipment"];
+const ITEM_TYPE_LABELS = { venue: "空間", equipment: "設備" };
+// 舊資料 itemName 為「空間:名稱」／「設備:名稱」格式，拆欄後以此解析前綴
+const LEGACY_ITEM_NAME_PREFIX_PATTERN = /^(空間|場地|設備|器材)\s*[:：]\s*/;
 const VALID_STATUS = ["可租借", "已借出", "停用中"];
 const VALID_APPLICATION_TYPES = ["借用申請", "歸還申請"];
 const VALID_APPLICATION_STATUS = ["待審核", "已核准", "已駁回"];
@@ -70,6 +102,10 @@ const VENUE_CLOSE_HOUR = 23;
 
 // 申請需要作業時間：最早可借用日 = 申請當日不計入，從次日起算的第 N 個工作天（跳過週末與國定假日）
 const BORROW_LEAD_WORKING_DAYS = 3;
+
+// Request-local memo：同一個 doGet/doPost 執行期間只讀資產表一次
+var assetsCache_ = null;
+var assetTypeMapCache_ = null;
 
 function doGet(e) {
   return routeRequest_("GET", e);
@@ -117,7 +153,7 @@ function routeRequest_(method, e) {
 
     if (path === "venue-occupied-slots" && method === "GET") {
       const assetId = requireField_(e && e.parameter && e.parameter.assetId, "assetId");
-      const date = requireField_(e && e.parameter && e.parameter.date, "date");
+      const date = requireDateText_(e && e.parameter && e.parameter.date, "date");
       return jsonResponse_(listVenueOccupiedSlots_(assetId, date));
     }
 
@@ -127,13 +163,16 @@ function routeRequest_(method, e) {
     }
 
     if (path === "availability" && method === "GET") {
-      const borrowedAt = requireField_(e && e.parameter && e.parameter.borrowedAt, "borrowedAt");
+      const borrowedAt = requireDateText_(e && e.parameter && e.parameter.borrowedAt, "borrowedAt");
       return jsonResponse_(listAvailableAssetsByStartDate_(borrowedAt));
     }
 
     if (path === "asset-availability-dates" && method === "GET") {
       const assetId = requireField_(e && e.parameter && e.parameter.assetId, "assetId");
-      const fromDate = String((e && e.parameter && e.parameter.fromDate) || getTodayText_()).trim();
+      const fromDateParam = e && e.parameter && e.parameter.fromDate;
+      const fromDate = fromDateParam
+        ? requireDateText_(fromDateParam, "fromDate")
+        : getTodayText_();
       const windowDays = parsePositiveInt_(
         e && e.parameter && e.parameter.windowDays,
         "windowDays"
@@ -143,7 +182,7 @@ function routeRequest_(method, e) {
 
     if (path === "available-return-dates" && method === "GET") {
       const assetId = requireField_(e && e.parameter && e.parameter.assetId, "assetId");
-      const borrowedAt = requireField_(e && e.parameter && e.parameter.borrowedAt, "borrowedAt");
+      const borrowedAt = requireDateText_(e && e.parameter && e.parameter.borrowedAt, "borrowedAt");
       return jsonResponse_(listAvailableReturnDates_(assetId, borrowedAt));
     }
 
@@ -264,19 +303,21 @@ function getAssetPauseSheet_() {
 
 function getBorrowApplicationsSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_BORROW_APPLICATIONS, BORROW_APPLICATION_HEADERS);
+  ensureBorrowSheetColumnLayout_(sheet, BORROW_APPLICATION_HEADERS);
   ensureColumnAsText_(sheet, 5); // studentPhone
   // 空間以小時計，borrowedAt/expectedReturnAt 可能為「YYYY-MM-DD HH:mm」，需存為純文字
-  ensureColumnAsText_(sheet, 9); // borrowedAt
-  ensureColumnAsText_(sheet, 10); // expectedReturnAt
+  ensureColumnAsText_(sheet, APP_COL_BORROWED_AT + 1);
+  ensureColumnAsText_(sheet, APP_COL_EXPECTED_RETURN_AT + 1);
   return sheet;
 }
 
 function getBorrowRecordsSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_BORROW_RECORDS, BORROW_RECORD_HEADERS);
+  ensureBorrowSheetColumnLayout_(sheet, BORROW_RECORD_HEADERS);
   ensureColumnAsText_(sheet, 4); // studentPhone
   // 空間以小時計，borrowedAt/expectedReturnAt 可能為「YYYY-MM-DD HH:mm」，需存為純文字
-  ensureColumnAsText_(sheet, 8); // borrowedAt
-  ensureColumnAsText_(sheet, 9); // expectedReturnAt
+  ensureColumnAsText_(sheet, RECORD_COL_BORROWED_AT + 1);
+  ensureColumnAsText_(sheet, RECORD_COL_EXPECTED_RETURN_AT + 1);
   return sheet;
 }
 
@@ -393,11 +434,21 @@ function ensureHeaders_(sheet, headers) {
   }
 }
 
+function invalidateAssetsCache_() {
+  assetsCache_ = null;
+  assetTypeMapCache_ = null;
+}
+
 function readAssets_() {
+  if (assetsCache_) {
+    return assetsCache_;
+  }
+
   const sheet = getAssetsSheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) {
-    return [];
+    assetsCache_ = [];
+    return assetsCache_;
   }
 
   const rows = sheet.getRange(2, 1, lastRow - 1, ASSET_HEADERS.length).getValues();
@@ -417,7 +468,8 @@ function readAssets_() {
     });
   }
 
-  return assets;
+  assetsCache_ = assets;
+  return assetsCache_;
 }
 
 function createAsset_(body) {
@@ -433,10 +485,11 @@ function createAsset_(body) {
 
   const sheet = getAssetsSheet_();
   const assetId = generateAssetId_(type);
-  const createdAt = new Date().toISOString();
+  const createdAt = getNowDateTimeText_();
   const status = "可租借";
 
   sheet.appendRow([assetId, name, type, status, createdAt]);
+  invalidateAssetsCache_();
   bumpDataVersion_();
 
   return { assetId: assetId };
@@ -461,6 +514,7 @@ function deleteAsset_(body) {
   const assetName = String(row[1] || "").trim();
   sheet.deleteRow(rowIndex);
   deleteAssetPauseRanges_(assetId);
+  invalidateAssetsCache_();
   bumpDataVersion_();
   return { ok: true, assetId: assetId, name: assetName };
 }
@@ -543,7 +597,7 @@ function createAssetPauseRange_(body) {
 
   const sheet = getAssetPauseSheet_();
   const id = "pause-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
-  const createdAt = new Date().toISOString();
+  const createdAt = getNowDateTimeText_();
   sheet.appendRow([id, assetId, startDate, endDate, note, createdAt]);
   bumpDataVersion_();
   return {
@@ -610,7 +664,7 @@ function createHoliday_(body) {
     }
   }
 
-  const createdAt = new Date().toISOString();
+  const createdAt = getNowDateTimeText_();
   sheet.appendRow([date, note, createdAt, operator.account]);
   bumpDataVersion_();
   return { ok: true, date: date, note: note, createdAt: createdAt, createdBy: operator.account };
@@ -693,10 +747,10 @@ function ensureGlobalPauseRangeNoBorrowConflict_(pauseStartDate, pauseEndDate) {
   if (lastRow < 2) return;
   const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
   for (var i = 0; i < rows.length; i++) {
-    const status = String(rows[i][10] || "").trim();
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
     if (status !== "租借中" && status !== "待生效") continue;
-    const borrowedAt = getDatePart_(normalizeTemporalText_(rows[i][7]));
-    const expectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][8]));
+    const borrowedAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_BORROWED_AT]));
+    const expectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]));
     if (!borrowedAt || !expectedReturnAt) continue;
     if (isDateRangeOverlapping_(borrowedAt, expectedReturnAt, pauseStartDate, pauseEndDate)) {
       throw new Error("此暫停區間與既有借用紀錄衝突，請先處理相關借用。");
@@ -723,7 +777,7 @@ function createGlobalPauseRange_(body) {
 
   const sheet = getGlobalPauseSheet_();
   const id = "global-pause-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
-  const createdAt = new Date().toISOString();
+  const createdAt = getNowDateTimeText_();
   sheet.appendRow([id, startDate, endDate, note, createdAt, operator.account]);
   bumpDataVersion_();
   return {
@@ -774,12 +828,12 @@ function ensurePauseRangeNoBorrowConflict_(assetId, pauseStartDate, pauseEndDate
   if (lastRow < 2) return;
   const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
   for (var i = 0; i < rows.length; i++) {
-    const status = String(rows[i][10] || "").trim();
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
     if (status !== "租借中" && status !== "待生效") continue;
-    const borrowedAt = normalizeDateText_(rows[i][7]);
-    const expectedReturnAt = normalizeDateText_(rows[i][8]);
+    const borrowedAt = normalizeDateText_(rows[i][RECORD_COL_BORROWED_AT]);
+    const expectedReturnAt = normalizeDateText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]);
     if (!borrowedAt || !expectedReturnAt) continue;
-    const assetIds = parseStringArray_(rows[i][6]);
+    const assetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
     if (assetIds.indexOf(assetId) < 0) continue;
     if (isDateRangeOverlapping_(borrowedAt, expectedReturnAt, pauseStartDate, pauseEndDate)) {
       throw new Error(
@@ -851,7 +905,7 @@ function createStaffAccount_(body) {
   }
 
   const sheet = getStaffAccountsSheet_();
-  const createdAt = new Date().toISOString();
+  const createdAt = getNowDateTimeText_();
   sheet.appendRow([name, account, password, createdAt, operator.account]);
   return { ok: true, account: account, name: name };
 }
@@ -884,7 +938,7 @@ function ensureDefaultStaffAccount_(sheet) {
       DEFAULT_STAFF_ACCOUNT,
       DEFAULT_STAFF_ACCOUNT,
       DEFAULT_STAFF_PASSWORD,
-      new Date().toISOString(),
+      getNowDateTimeText_(),
       "system",
     ]);
     return;
@@ -900,7 +954,7 @@ function ensureDefaultStaffAccount_(sheet) {
     DEFAULT_STAFF_ACCOUNT,
     DEFAULT_STAFF_ACCOUNT,
     DEFAULT_STAFF_PASSWORD,
-    new Date().toISOString(),
+    getNowDateTimeText_(),
     "system",
   ]);
 }
@@ -921,10 +975,12 @@ function readBorrowApplications_() {
     const type = String(row[1] || "").trim();
     if (VALID_APPLICATION_TYPES.indexOf(type) === -1) continue;
 
-    const status = String(row[10] || "").trim();
-    const recordId = String(row[14] || "").trim();
-    const reviewedBy = String(row[12] || "").trim();
-    const reviewedAt = normalizeDateText_(row[13]);
+    const status = String(row[APP_COL_STATUS] || "").trim();
+    const recordId = String(row[APP_COL_RECORD_ID] || "").trim();
+    const reviewedBy = String(row[APP_COL_REVIEWED_BY] || "").trim();
+    const reviewedAt = normalizeDateText_(row[APP_COL_REVIEWED_AT]);
+    const assetIds = parseStringArray_(row[APP_COL_ASSET_IDS]);
+    const item = resolveItemTypeAndName_(row[APP_COL_ITEM_TYPE], row[APP_COL_ITEM_NAME], assetIds);
 
     const app = {
       id: id,
@@ -933,16 +989,17 @@ function readBorrowApplications_() {
       studentName: String(row[3] || "").trim(),
       studentPhone: normalizePhoneText_(row[4]),
       studentEmail: String(row[5] || "").trim(),
-      itemName: String(row[6] || "").trim(),
-      assetIds: parseStringArray_(row[7]),
-      borrowedAt: normalizeTemporalText_(row[8]),
-      expectedReturnAt: normalizeTemporalText_(row[9]),
+      itemType: item.itemType,
+      itemName: item.itemName,
+      assetIds: assetIds,
+      borrowedAt: normalizeTemporalText_(row[APP_COL_BORROWED_AT]),
+      expectedReturnAt: normalizeTemporalText_(row[APP_COL_EXPECTED_RETURN_AT]),
       status: VALID_APPLICATION_STATUS.indexOf(status) >= 0 ? status : "待審核",
-      createdAt: normalizeTemporalText_(row[11]),
-      borrowerGroup: String(row[15] || "").trim(),
-      mentorName: String(row[16] || "").trim(),
-      activityName: String(row[17] || "").trim(),
-      rejectionReason: String(row[18] || "").trim(),
+      createdAt: String(row[APP_COL_CREATED_AT] || "").trim(),
+      borrowerGroup: String(row[APP_COL_BORROWER_GROUP] || "").trim(),
+      mentorName: String(row[APP_COL_MENTOR_NAME] || "").trim(),
+      activityName: String(row[APP_COL_ACTIVITY_NAME] || "").trim(),
+      rejectionReason: String(row[APP_COL_REJECTION_REASON] || "").trim(),
     };
 
     if (reviewedBy) app.reviewedBy = reviewedBy;
@@ -974,26 +1031,29 @@ function readBorrowRecords_() {
     const id = String(row[0] || "").trim();
     if (!id) continue;
 
-    const status = String(row[10] || "").trim();
+    const status = String(row[RECORD_COL_STATUS] || "").trim();
     if (VALID_RECORD_STATUS.indexOf(status) === -1) continue;
 
-    const returnedAt = normalizeDateText_(row[9]);
-    const returnRequestStatus = String(row[11] || "").trim();
+    const returnedAt = normalizeDateText_(row[RECORD_COL_RETURNED_AT]);
+    const returnRequestStatus = String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim();
+    const assetIds = parseStringArray_(row[RECORD_COL_ASSET_IDS]);
+    const item = resolveItemTypeAndName_(row[RECORD_COL_ITEM_TYPE], row[RECORD_COL_ITEM_NAME], assetIds);
     const record = {
       id: id,
       studentId: String(row[1] || "").trim(),
       studentName: String(row[2] || "").trim(),
       studentPhone: normalizePhoneText_(row[3]),
       studentEmail: String(row[4] || "").trim(),
-      itemName: String(row[5] || "").trim(),
-      assetIds: parseStringArray_(row[6]),
-      borrowedAt: normalizeTemporalText_(row[7]),
-      expectedReturnAt: normalizeTemporalText_(row[8]),
+      itemType: item.itemType,
+      itemName: item.itemName,
+      assetIds: assetIds,
+      borrowedAt: normalizeTemporalText_(row[RECORD_COL_BORROWED_AT]),
+      expectedReturnAt: normalizeTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT]),
       status: status,
       returnRequestStatus: returnRequestStatus === "待審核" ? "待審核" : "",
-      borrowerGroup: String(row[12] || "").trim(),
-      mentorName: String(row[13] || "").trim(),
-      activityName: String(row[14] || "").trim(),
+      borrowerGroup: String(row[RECORD_COL_BORROWER_GROUP] || "").trim(),
+      mentorName: String(row[RECORD_COL_MENTOR_NAME] || "").trim(),
+      activityName: String(row[RECORD_COL_ACTIVITY_NAME] || "").trim(),
     };
     if (returnedAt) record.returnedAt = returnedAt;
     records.push(record);
@@ -1012,7 +1072,7 @@ function createBorrowApplication_(body) {
   const studentName = requireField_(body && body.studentName, "studentName");
   const studentPhone = normalizePhoneText_(requireField_(body && body.studentPhone, "studentPhone"));
   const studentEmail = requireField_(body && body.studentEmail, "studentEmail");
-  const itemName = requireField_(body && body.itemName, "itemName");
+  const rawItemName = requireField_(body && body.itemName, "itemName");
   const borrowerGroup = String((body && body.borrowerGroup) || "").trim();
   const mentorName = String((body && body.mentorName) || "").trim();
   const activityName = String((body && body.activityName) || "").trim();
@@ -1020,6 +1080,17 @@ function createBorrowApplication_(body) {
   const recordId = String((body && body.recordId) || "").trim();
   const assetTypeMap = getAssetTypeMap_();
   const primaryAssetType = assetTypeMap[assetIds[0]];
+  // itemType 以資產表為準；找不到資產時才採用前端傳入值（或舊格式前綴）
+  const item = resolveItemTypeAndName_(
+    normalizeItemType_(primaryAssetType) || (body && body.itemType),
+    rawItemName,
+    assetIds
+  );
+  const itemType = item.itemType;
+  const itemName = item.itemName;
+  if (!itemName) {
+    throw new Error("itemName 為必填");
+  }
 
   let borrowedAt;
   let expectedReturnAt;
@@ -1059,7 +1130,7 @@ function createBorrowApplication_(body) {
 
   const applicationId = generateApplicationId_(type);
   const status = "待審核";
-  const createdAt = new Date().toISOString();
+  const createdAt = getNowDateTimeText_();
 
   const sheet = getBorrowApplicationsSheet_();
   sheet.appendRow([
@@ -1070,6 +1141,7 @@ function createBorrowApplication_(body) {
     formatPhoneForSheet_(studentPhone),
     studentEmail,
     itemName,
+    itemType,
     JSON.stringify(assetIds),
     borrowedAt,
     expectedReturnAt,
@@ -1184,16 +1256,16 @@ function getOccupiedAssetIdSetForPeriod_(targetBorrowedAt, targetExpectedReturnA
     const recordId = String(rows[i][0] || "").trim();
     if (excludeRecordId && recordId === excludeRecordId) continue;
 
-    const status = String(rows[i][10] || "").trim();
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
     if (status !== "租借中" && status !== "待生效") continue;
 
-    const borrowedAt = getDatePart_(normalizeTemporalText_(rows[i][7]));
-    const expectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][8]));
+    const borrowedAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_BORROWED_AT]));
+    const expectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]));
     if (!borrowedAt || !expectedReturnAt) continue;
     const effectiveEndAt = getEffectiveBlockedRangeEndDate_(status, expectedReturnAt, todayText);
 
     if (isDateRangeOverlapping_(borrowedAt, effectiveEndAt, targetBorrowedAt, targetExpectedReturnAt)) {
-      const ids = parseStringArray_(rows[i][6]);
+      const ids = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
       for (var a = 0; a < ids.length; a++) {
         // 空間以小時計，衝突由 venue 專用流程處理，此處僅處理設備
         if (assetTypeMap[ids[a]] === "venue") continue;
@@ -1333,14 +1405,14 @@ function getAssetBlockedRanges_(assetId, blockedRangeMap) {
 
   const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
   for (var i = 0; i < rows.length; i++) {
-    const status = String(rows[i][10] || "").trim();
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
     if (status !== "租借中" && status !== "待生效") continue;
-    const borrowedAt = normalizeDateText_(rows[i][7]);
-    const expectedReturnAt = normalizeDateText_(rows[i][8]);
+    const borrowedAt = normalizeDateText_(rows[i][RECORD_COL_BORROWED_AT]);
+    const expectedReturnAt = normalizeDateText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]);
     if (!borrowedAt || !expectedReturnAt) continue;
     const effectiveEndAt = getEffectiveBlockedRangeEndDate_(status, expectedReturnAt, todayText);
 
-    const assetIds = parseStringArray_(rows[i][6]);
+    const assetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
     if (assetIds.indexOf(assetId) >= 0) {
       ranges.push({ start: borrowedAt, end: effectiveEndAt });
     }
@@ -1365,14 +1437,14 @@ function getBlockedRangesByAssetId_() {
   if (lastRow >= 2) {
     const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
     for (var i = 0; i < rows.length; i++) {
-      const status = String(rows[i][10] || "").trim();
+      const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
       if (status !== "租借中" && status !== "待生效") continue;
-      const borrowedAt = getDatePart_(normalizeTemporalText_(rows[i][7]));
-      const expectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][8]));
+      const borrowedAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_BORROWED_AT]));
+      const expectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]));
       if (!borrowedAt || !expectedReturnAt) continue;
       const effectiveEndAt = getEffectiveBlockedRangeEndDate_(status, expectedReturnAt, todayText);
 
-      const assetIds = parseStringArray_(rows[i][6]);
+      const assetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
       for (var a = 0; a < assetIds.length; a++) {
         const currentAssetId = assetIds[a];
         if (assetTypeMap[currentAssetId] === "venue") continue;
@@ -1481,8 +1553,8 @@ function dailyCheckAndBlockOverdueStudents_() {
 
   var added = false;
   for (var i = 0; i < rows.length; i++) {
-    const status = String(rows[i][10] || "").trim();
-    const expectedReturnAt = normalizeTemporalText_(rows[i][8]);
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
+    const expectedReturnAt = normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]);
     if (!isRecordCurrentlyOverdue_(status, expectedReturnAt, todayText)) continue;
     const studentId = String(rows[i][1] || "").trim();
     if (!studentId || existingBlocks[studentId]) continue;
@@ -1577,12 +1649,12 @@ function getVenueBookingContext_(assetId, excludeRecordId) {
       const recordId = String(rows[i][0] || "").trim();
       if (excludeRecordId && recordId === excludeRecordId) continue;
 
-      const status = String(rows[i][10] || "").trim();
+      const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
       if (status !== "租借中" && status !== "待生效") continue;
-      const ids = parseStringArray_(rows[i][6]);
+      const ids = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
       if (ids.indexOf(assetId) < 0) continue;
-      const start = normalizeTemporalText_(rows[i][7]);
-      const end = normalizeTemporalText_(rows[i][8]);
+      const start = normalizeTemporalText_(rows[i][RECORD_COL_BORROWED_AT]);
+      const end = normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]);
       if (!isVenueTemporal_(start) || !isVenueTemporal_(end)) continue;
       const date = getDatePart_(start);
       if (!intervalsByDate[date]) intervalsByDate[date] = [];
@@ -1649,14 +1721,8 @@ function listVenueOccupiedSlots_(assetId, dateText) {
 }
 
 function validateVenueBooking_(assetId, startRaw, endRaw) {
-  const start = normalizeTemporalText_(startRaw);
-  const end = normalizeTemporalText_(endRaw);
-  if (!DATETIME_TEXT_PATTERN.test(start)) {
-    throw new Error("空間借用開始時間格式需為 YYYY-MM-DD HH:mm");
-  }
-  if (!DATETIME_TEXT_PATTERN.test(end)) {
-    throw new Error("空間借用結束時間格式需為 YYYY-MM-DD HH:mm");
-  }
+  const start = requireDateTimeText_(startRaw, "空間借用開始時間");
+  const end = requireDateTimeText_(endRaw, "空間借用結束時間");
 
   const date = getDatePart_(start);
   if (getDatePart_(end) !== date) {
@@ -1708,14 +1774,8 @@ function validateVenueBooking_(assetId, startRaw, endRaw) {
 }
 
 function validateVenueBookingExcludingRecord_(assetId, startRaw, endRaw, excludeRecordId) {
-  const start = normalizeTemporalText_(startRaw);
-  const end = normalizeTemporalText_(endRaw);
-  if (!DATETIME_TEXT_PATTERN.test(start)) {
-    throw new Error("空間借用開始時間格式需為 YYYY-MM-DD HH:mm");
-  }
-  if (!DATETIME_TEXT_PATTERN.test(end)) {
-    throw new Error("空間借用結束時間格式需為 YYYY-MM-DD HH:mm");
-  }
+  const start = requireDateTimeText_(startRaw, "空間借用開始時間");
+  const end = requireDateTimeText_(endRaw, "空間借用結束時間");
 
   const date = getDatePart_(start);
   if (getDatePart_(end) !== date) {
@@ -1773,25 +1833,25 @@ function findEquipmentPeriodConflict_(assetIds, borrowedAt, expectedReturnAt, ex
     const recordId = String(rows[i][0] || "").trim();
     if (excludeRecordId && recordId === excludeRecordId) continue;
 
-    const status = String(rows[i][10] || "").trim();
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
     if (status !== "租借中" && status !== "待生效") continue;
 
-    const otherBorrowedAt = getDatePart_(normalizeTemporalText_(rows[i][7]));
-    const otherExpectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][8]));
+    const otherBorrowedAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_BORROWED_AT]));
+    const otherExpectedReturnAt = getDatePart_(normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]));
     if (!otherBorrowedAt || !otherExpectedReturnAt) continue;
 
     if (!isDateRangeOverlapping_(otherBorrowedAt, otherExpectedReturnAt, borrowedAt, expectedReturnAt)) {
       continue;
     }
 
-    const otherAssetIds = parseStringArray_(rows[i][6]);
+    const otherAssetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
     for (var a = 0; a < assetIds.length; a++) {
       if (otherAssetIds.indexOf(assetIds[a]) >= 0) {
         return {
           recordId: recordId,
           studentId: String(rows[i][1] || "").trim(),
           studentName: String(rows[i][2] || "").trim(),
-          itemName: String(rows[i][5] || "").trim(),
+          itemName: parseLegacyItemName_(rows[i][RECORD_COL_ITEM_NAME]).name,
           borrowedAt: otherBorrowedAt,
           expectedReturnAt: otherExpectedReturnAt,
         };
@@ -1863,13 +1923,13 @@ function updateBorrowRecordExpectedReturnAt_(body) {
   }
 
   const row = recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).getValues()[0];
-  const status = String(row[10] || "").trim();
+  const status = String(row[RECORD_COL_STATUS] || "").trim();
   if (status !== "租借中" && status !== "待生效") {
     throw new Error("僅可修改租借中或待生效紀錄的應歸還日期");
   }
 
-  const borrowedAt = normalizeTemporalText_(row[7]);
-  const assetIds = parseStringArray_(row[6]);
+  const borrowedAt = normalizeTemporalText_(row[RECORD_COL_BORROWED_AT]);
+  const assetIds = parseStringArray_(row[RECORD_COL_ASSET_IDS]);
   if (!assetIds.length) {
     throw new Error("紀錄缺少資產資訊");
   }
@@ -1879,7 +1939,7 @@ function updateBorrowRecordExpectedReturnAt_(body) {
   var expectedReturnAt;
 
   if (primaryType === "venue") {
-    expectedReturnAt = normalizeTemporalText_(rawExpectedReturnAt);
+    expectedReturnAt = requireDateTimeText_(rawExpectedReturnAt, "expectedReturnAt");
     validateVenueBookingExcludingRecord_(assetIds[0], borrowedAt, expectedReturnAt, recordId);
   } else {
     expectedReturnAt = requireDateText_(rawExpectedReturnAt, "expectedReturnAt");
@@ -1893,7 +1953,7 @@ function updateBorrowRecordExpectedReturnAt_(body) {
     ensureAssetsAvailableForPeriodExcludingRecord_(assetIds, borrowedDate, expectedReturnAt, recordId);
   }
 
-  row[8] = expectedReturnAt;
+  row[RECORD_COL_EXPECTED_RETURN_AT] = expectedReturnAt;
   recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
   reconcileBorrowingState_();
   bumpDataVersion_();
@@ -1917,7 +1977,7 @@ function reviewBorrowApplication_(body) {
 
   const row = appSheet.getRange(appRowIndex, 1, 1, BORROW_APPLICATION_HEADERS.length).getValues()[0];
   const appType = String(row[1] || "").trim();
-  const currentStatus = String(row[10] || "").trim();
+  const currentStatus = String(row[APP_COL_STATUS] || "").trim();
   if (currentStatus !== "待審核") {
     throw new Error("此申請已審核，無法重複操作");
   }
@@ -1925,20 +1985,28 @@ function reviewBorrowApplication_(body) {
   const reviewedAt = getTodayText_();
   const nextStatus = action === "approve" ? "已核准" : "已駁回";
 
-  row[10] = nextStatus;
-  row[12] = staffName;
-  row[13] = reviewedAt;
-  row[8] = normalizeTemporalText_(row[8]);
-  row[9] = normalizeTemporalText_(row[9]);
-  row[18] = action === "reject" ? rejectionReason : "";
+  row[APP_COL_STATUS] = nextStatus;
+  row[APP_COL_REVIEWED_BY] = staffName;
+  row[APP_COL_REVIEWED_AT] = reviewedAt;
+  row[APP_COL_BORROWED_AT] = normalizeTemporalText_(row[APP_COL_BORROWED_AT]);
+  row[APP_COL_EXPECTED_RETURN_AT] = normalizeTemporalText_(row[APP_COL_EXPECTED_RETURN_AT]);
+  row[APP_COL_REJECTION_REASON] = action === "reject" ? rejectionReason : "";
+  // 審核時順手把舊格式的 itemName 前綴正規化到 itemType 欄
+  const reviewedItem = resolveItemTypeAndName_(
+    row[APP_COL_ITEM_TYPE],
+    row[APP_COL_ITEM_NAME],
+    parseStringArray_(row[APP_COL_ASSET_IDS])
+  );
+  row[APP_COL_ITEM_NAME] = reviewedItem.itemName;
+  row[APP_COL_ITEM_TYPE] = reviewedItem.itemType;
 
-  let linkedRecordId = String(row[14] || "").trim();
+  let linkedRecordId = String(row[APP_COL_RECORD_ID] || "").trim();
   if (appType === "借用申請") {
     if (action === "approve") {
       ensureStudentEligibleForBorrow_(String(row[2] || "").trim());
       ensureApplicationStillBookable_(row);
       linkedRecordId = createBorrowRecordFromApplicationRow_(row);
-      row[14] = linkedRecordId;
+      row[APP_COL_RECORD_ID] = linkedRecordId;
     }
   } else if (appType === "歸還申請") {
     if (!linkedRecordId) {
@@ -1968,12 +2036,12 @@ function reviewBorrowApplication_(body) {
 }
 
 function ensureApplicationStillBookable_(appRow) {
-  const assetIds = parseStringArray_(appRow[7]);
+  const assetIds = parseStringArray_(appRow[APP_COL_ASSET_IDS]);
   if (assetIds.length === 0) {
     throw new Error("申請缺少借用項目，無法核准。");
   }
-  const borrowedAt = normalizeTemporalText_(appRow[8]);
-  const expectedReturnAt = normalizeTemporalText_(appRow[9]);
+  const borrowedAt = normalizeTemporalText_(appRow[APP_COL_BORROWED_AT]);
+  const expectedReturnAt = normalizeTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT]);
   const assetTypeMap = getAssetTypeMap_();
   const primaryAssetType = assetTypeMap[assetIds[0]];
 
@@ -1992,24 +2060,30 @@ function ensureApplicationStillBookable_(appRow) {
 function createBorrowRecordFromApplicationRow_(appRow) {
   const recordSheet = getBorrowRecordsSheet_();
   const recordId = "rec-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
-  const borrowedAt = normalizeTemporalText_(appRow[8]);
-  const expectedReturnAt = normalizeTemporalText_(appRow[9]);
+  const borrowedAt = normalizeTemporalText_(appRow[APP_COL_BORROWED_AT]);
+  const expectedReturnAt = normalizeTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT]);
+  const item = resolveItemTypeAndName_(
+    appRow[APP_COL_ITEM_TYPE],
+    appRow[APP_COL_ITEM_NAME],
+    parseStringArray_(appRow[APP_COL_ASSET_IDS])
+  );
   recordSheet.appendRow([
     recordId,
     String(appRow[2] || "").trim(),
     String(appRow[3] || "").trim(),
     formatPhoneForSheet_(appRow[4]),
     String(appRow[5] || "").trim(),
-    String(appRow[6] || "").trim(),
-    String(appRow[7] || "").trim(),
+    item.itemName,
+    item.itemType,
+    String(appRow[APP_COL_ASSET_IDS] || "").trim(),
     borrowedAt,
     expectedReturnAt,
     "",
     getRecordStatusByBorrowDate_(borrowedAt),
     "",
-    String(appRow[15] || "").trim(),
-    String(appRow[16] || "").trim(),
-    String(appRow[17] || "").trim(),
+    String(appRow[APP_COL_BORROWER_GROUP] || "").trim(),
+    String(appRow[APP_COL_MENTOR_NAME] || "").trim(),
+    String(appRow[APP_COL_ACTIVITY_NAME] || "").trim(),
   ]);
   return recordId;
 }
@@ -2022,9 +2096,9 @@ function markBorrowRecordReturned_(recordId, returnedAt) {
   }
 
   const row = recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).getValues()[0];
-  row[9] = returnedAt;
-  row[10] = "已歸還";
-  row[11] = "";
+  row[RECORD_COL_RETURNED_AT] = returnedAt;
+  row[RECORD_COL_STATUS] = "已歸還";
+  row[RECORD_COL_RETURN_REQUEST_STATUS] = "";
   recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
 }
 
@@ -2036,14 +2110,14 @@ function markBorrowRecordReturnPending_(recordId) {
   }
 
   const row = recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).getValues()[0];
-  const status = String(row[10] || "").trim();
+  const status = String(row[RECORD_COL_STATUS] || "").trim();
   if (status !== "租借中" && status !== "待生效") {
     throw new Error("此租借紀錄目前不可申請歸還");
   }
-  if (String(row[11] || "").trim() === "待審核") {
+  if (String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim() === "待審核") {
     throw new Error("此項目已有待審核歸還申請，請等待職員審核。");
   }
-  row[11] = "待審核";
+  row[RECORD_COL_RETURN_REQUEST_STATUS] = "待審核";
   recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
 }
 
@@ -2055,8 +2129,8 @@ function clearBorrowRecordReturnPending_(recordId) {
   }
 
   const row = recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).getValues()[0];
-  if (String(row[11] || "").trim() !== "") {
-    row[11] = "";
+  if (String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim() !== "") {
+    row[RECORD_COL_RETURN_REQUEST_STATUS] = "";
     recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
     return;
   }
@@ -2079,34 +2153,35 @@ function reconcileBorrowingState_() {
 
     for (var i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const borrowedAt = normalizeTemporalText_(row[7]);
-      const expectedReturnAt = normalizeTemporalText_(row[8]);
-      const returnedAt = normalizeDateText_(row[9]);
-      const returnRequestStatus = String(row[11] || "").trim() === "待審核" ? "待審核" : "";
-      const currentStatus = String(row[10] || "").trim();
+      const borrowedAt = normalizeTemporalText_(row[RECORD_COL_BORROWED_AT]);
+      const expectedReturnAt = normalizeTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT]);
+      const returnedAt = normalizeDateText_(row[RECORD_COL_RETURNED_AT]);
+      const returnRequestStatus =
+        String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim() === "待審核" ? "待審核" : "";
+      const currentStatus = String(row[RECORD_COL_STATUS] || "").trim();
       var nextStatus = currentStatus;
 
-      if (row[7] !== borrowedAt) {
-        row[7] = borrowedAt;
+      if (row[RECORD_COL_BORROWED_AT] !== borrowedAt) {
+        row[RECORD_COL_BORROWED_AT] = borrowedAt;
         hasRecordUpdates = true;
       }
-      if (row[8] !== expectedReturnAt) {
-        row[8] = expectedReturnAt;
+      if (row[RECORD_COL_EXPECTED_RETURN_AT] !== expectedReturnAt) {
+        row[RECORD_COL_EXPECTED_RETURN_AT] = expectedReturnAt;
         hasRecordUpdates = true;
       }
-      if (row[9] !== returnedAt) {
-        row[9] = returnedAt;
+      if (row[RECORD_COL_RETURNED_AT] !== returnedAt) {
+        row[RECORD_COL_RETURNED_AT] = returnedAt;
         hasRecordUpdates = true;
       }
-      if (row[11] !== returnRequestStatus) {
-        row[11] = returnRequestStatus;
+      if (row[RECORD_COL_RETURN_REQUEST_STATUS] !== returnRequestStatus) {
+        row[RECORD_COL_RETURN_REQUEST_STATUS] = returnRequestStatus;
         hasRecordUpdates = true;
       }
 
       if (returnedAt) {
         nextStatus = "已歸還";
-        if (row[11] !== "") {
-          row[11] = "";
+        if (row[RECORD_COL_RETURN_REQUEST_STATUS] !== "") {
+          row[RECORD_COL_RETURN_REQUEST_STATUS] = "";
           hasRecordUpdates = true;
           hasMeaningfulRecordUpdates = true;
         }
@@ -2114,14 +2189,14 @@ function reconcileBorrowingState_() {
         nextStatus = "待生效";
       } else {
         nextStatus = "租借中";
-        const assetIds = parseStringArray_(row[6]);
+        const assetIds = parseStringArray_(row[RECORD_COL_ASSET_IDS]);
         for (var a = 0; a < assetIds.length; a++) {
           activeAssetIdSet[assetIds[a]] = true;
         }
       }
 
       if (nextStatus !== currentStatus) {
-        row[10] = nextStatus;
+        row[RECORD_COL_STATUS] = nextStatus;
         hasRecordUpdates = true;
         hasMeaningfulRecordUpdates = true;
       }
@@ -2174,6 +2249,7 @@ function syncAssetStatusFromRecords_(activeAssetIdSet) {
 
   if (hasAssetUpdates) {
     assetSheet.getRange(2, 1, numRows, ASSET_HEADERS.length).setValues(rows);
+    invalidateAssetsCache_();
   }
   return hasAssetUpdates;
 }
@@ -2185,6 +2261,10 @@ function getRecordStatusByBorrowDate_(borrowedAt) {
 
 function getTodayText_() {
   return Utilities.formatDate(new Date(), APP_TIME_ZONE, "yyyy-MM-dd");
+}
+
+function getNowDateTimeText_() {
+  return Utilities.formatDate(new Date(), APP_TIME_ZONE, "yyyy-MM-dd HH:mm");
 }
 
 function updateAssetStatuses_(assetIds, nextStatus) {
@@ -2211,6 +2291,7 @@ function updateAssetStatuses_(assetIds, nextStatus) {
   }
 
   sheet.getRange(2, 1, numRows, ASSET_HEADERS.length).setValues(rows);
+  invalidateAssetsCache_();
 }
 
 function findRowById_(sheet, width, id) {
@@ -2233,10 +2314,19 @@ function requireField_(value, fieldName) {
 }
 
 function requireDateText_(value, fieldName) {
-  const text = normalizeDateText_(value);
+  const text = String(value || "").trim();
   if (!text) throw new Error(fieldName + " 為必填");
   if (!DATE_TEXT_PATTERN.test(text)) {
     throw new Error(fieldName + " 格式需為 YYYY-MM-DD");
+  }
+  return text;
+}
+
+function requireDateTimeText_(value, fieldName) {
+  const text = String(value || "").trim();
+  if (!text) throw new Error(fieldName + " 為必填");
+  if (!DATETIME_TEXT_PATTERN.test(text)) {
+    throw new Error(fieldName + " 格式需為 YYYY-MM-DD HH:mm");
   }
   return text;
 }
@@ -2250,16 +2340,7 @@ function normalizeDateText_(value) {
   const text = String(value).trim();
   if (!text) return "";
   if (DATE_TEXT_PATTERN.test(text)) return text;
-
-  // 容錯：處理斜線、ISO 'T'、含時間等格式，僅取日期部分並正規化為 YYYY-MM-DD
-  const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-  if (match) {
-    return (
-      match[1] + "-" + String(match[2]).padStart(2, "0") + "-" + String(match[3]).padStart(2, "0")
-    );
-  }
-
-  return text;
+  return "";
 }
 
 function ensureDateOnOrAfterToday_(dateText, fieldName) {
@@ -2374,29 +2455,15 @@ function normalizeTemporalText_(value) {
   const text = String(value).trim();
   if (!text) return "";
   if (DATE_TEXT_PATTERN.test(text) || DATETIME_TEXT_PATTERN.test(text)) return text;
-
-  // 容錯：處理斜線、ISO 'T'、含秒數等格式，正規化為 YYYY-MM-DD 或 YYYY-MM-DD HH:mm
-  const match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::\d{2})?)?/);
-  if (match) {
-    const datePart =
-      match[1] + "-" + String(match[2]).padStart(2, "0") + "-" + String(match[3]).padStart(2, "0");
-    if (match[4] != null) {
-      const hour = Number(match[4]);
-      const minute = Number(match[5]);
-      if (hour === 0 && minute === 0) return datePart;
-      return datePart + " " + String(match[4]).padStart(2, "0") + ":" + match[5];
-    }
-    return datePart;
-  }
-
-  return text;
+  return "";
 }
 
 function getDatePart_(text) {
   const value = String(text || "").trim();
+  if (!value) return "";
   if (DATETIME_TEXT_PATTERN.test(value)) return value.slice(0, 10);
   if (DATE_TEXT_PATTERN.test(value)) return value;
-  return value.slice(0, 10);
+  return "";
 }
 
 function isVenueTemporal_(text) {
@@ -2404,7 +2471,7 @@ function isVenueTemporal_(text) {
 }
 
 function requireTemporalText_(value, fieldName) {
-  const text = normalizeTemporalText_(value);
+  const text = String(value || "").trim();
   if (!text) throw new Error(fieldName + " 為必填");
   if (!DATE_TEXT_PATTERN.test(text) && !DATETIME_TEXT_PATTERN.test(text)) {
     throw new Error(fieldName + " 格式需為 YYYY-MM-DD 或 YYYY-MM-DD HH:mm");
@@ -2455,12 +2522,150 @@ function getVenueOpenHoursForDate_(dateText, holidaySet) {
 }
 
 function getAssetTypeMap_() {
+  if (assetTypeMapCache_) {
+    return assetTypeMapCache_;
+  }
   const map = {};
   const assets = readAssets_();
   for (var i = 0; i < assets.length; i++) {
     map[assets[i].id] = assets[i].type;
   }
-  return map;
+  assetTypeMapCache_ = map;
+  return assetTypeMapCache_;
+}
+
+function normalizeItemType_(raw) {
+  const text = String(raw || "").trim();
+  return VALID_TYPES.indexOf(text) >= 0 ? text : "";
+}
+
+function formatItemTypeLabel_(itemType) {
+  return ITEM_TYPE_LABELS[normalizeItemType_(itemType)] || "";
+}
+
+// 將舊格式「空間:名稱」拆成 { type, name }；沒有前綴時 type 為空字串
+function parseLegacyItemName_(raw) {
+  const text = String(raw || "").trim();
+  const match = LEGACY_ITEM_NAME_PREFIX_PATTERN.exec(text);
+  if (!match) return { type: "", name: text };
+  const prefix = match[1];
+  const type = prefix === "空間" || prefix === "場地" ? "venue" : "equipment";
+  return { type: type, name: text.slice(match[0].length).trim() };
+}
+
+// 以 itemType 欄位為主，缺少時依序退回：舊 itemName 前綴 → assets 表資產類型
+function resolveItemTypeAndName_(rawItemType, rawItemName, assetIds) {
+  const legacy = parseLegacyItemName_(rawItemName);
+  let type = normalizeItemType_(rawItemType) || legacy.type;
+  if (!type && assetIds && assetIds.length) {
+    type = normalizeItemType_(getAssetTypeMap_()[assetIds[0]]);
+  }
+  return { itemType: type, itemName: legacy.name };
+}
+
+// 一次性遷移：將 borrow_applications / borrow_records 既有列的 itemName 前綴拆到 itemType 欄。
+// 可在 Apps Script 編輯器手動執行；未執行前讀取端也會自動退回解析前綴，不影響功能。
+function migrateItemNameTypeSplit() {
+  const summary = {
+    applications: migrateItemTypeColumnForSheet_(
+      getBorrowApplicationsSheet_(),
+      BORROW_APPLICATION_HEADERS.length,
+      APP_COL_ITEM_NAME,
+      APP_COL_ITEM_TYPE,
+      APP_COL_ASSET_IDS
+    ),
+    records: migrateItemTypeColumnForSheet_(
+      getBorrowRecordsSheet_(),
+      BORROW_RECORD_HEADERS.length,
+      RECORD_COL_ITEM_NAME,
+      RECORD_COL_ITEM_TYPE,
+      RECORD_COL_ASSET_IDS
+    ),
+  };
+  if (summary.applications > 0 || summary.records > 0) {
+    bumpDataVersion_();
+  }
+  console.log("itemName/itemType 遷移完成：" + JSON.stringify(summary));
+  return summary;
+}
+
+
+// 依表頭名稱重排欄位，支援：無 itemType、itemType 在末欄、或已是目標順序。
+function ensureBorrowSheetColumnLayout_(sheet, desiredHeaders) {
+  const lastCol = Math.max(sheet.getLastColumn(), desiredHeaders.length);
+  const currentHeaders = sheet
+    .getRange(1, 1, 1, lastCol)
+    .getValues()[0]
+    .map(function (h) {
+      return String(h || "").trim();
+    });
+  var alreadyMatched = desiredHeaders.length === currentHeaders.length;
+  if (alreadyMatched) {
+    for (var i = 0; i < desiredHeaders.length; i++) {
+      if (currentHeaders[i] !== desiredHeaders[i]) {
+        alreadyMatched = false;
+        break;
+      }
+    }
+  }
+  if (alreadyMatched) return false;
+
+  const oldIndexByName = {};
+  for (var c = 0; c < currentHeaders.length; c++) {
+    if (currentHeaders[c]) oldIndexByName[currentHeaders[c]] = c;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    sheet.clear();
+    sheet.getRange(1, 1, 1, desiredHeaders.length).setValues([desiredHeaders]);
+    sheet.setFrozenRows(1);
+    return true;
+  }
+
+  const oldData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  const newData = [];
+  for (var r = 0; r < oldData.length; r++) {
+    const newRow = [];
+    for (var h = 0; h < desiredHeaders.length; h++) {
+      if (r === 0) {
+        newRow.push(desiredHeaders[h]);
+      } else {
+        const oldIdx = oldIndexByName[desiredHeaders[h]];
+        newRow.push(oldIdx === undefined ? "" : oldData[r][oldIdx]);
+      }
+    }
+    newData.push(newRow);
+  }
+
+  sheet.clear();
+  sheet.getRange(1, 1, newData.length, desiredHeaders.length).setValues(newData);
+  sheet.setFrozenRows(1);
+  return true;
+}
+
+function migrateItemTypeColumnForSheet_(sheet, columnCount, nameCol, typeCol, assetIdsCol) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const range = sheet.getRange(2, 1, lastRow - 1, columnCount);
+  const rows = range.getValues();
+  let updated = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (!String(rows[i][0] || "").trim()) continue;
+    const resolved = resolveItemTypeAndName_(
+      rows[i][typeCol],
+      rows[i][nameCol],
+      parseStringArray_(rows[i][assetIdsCol])
+    );
+    const currentName = String(rows[i][nameCol] || "").trim();
+    const currentType = String(rows[i][typeCol] || "").trim();
+    if (currentName === resolved.itemName && currentType === resolved.itemType) continue;
+    rows[i][nameCol] = resolved.itemName;
+    rows[i][typeCol] = resolved.itemType;
+    updated++;
+  }
+  if (updated > 0) range.setValues(rows);
+  return updated;
 }
 
 function parsePositiveInt_(raw, fieldName) {

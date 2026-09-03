@@ -91,8 +91,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 
 	function buildItemName(): string {
 		if (!selectedAssetId.value || !selectedAssetName.value || !selectedAssetType.value) return "";
-		const label = selectedAssetType.value === "venue" ? "空間" : "設備";
-		return `${label}:${selectedAssetName.value}`;
+		return selectedAssetName.value;
 	}
 
 	function createBorrowConfirmSummary(): BorrowConfirmSummary {
@@ -205,6 +204,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 				borrowerGroup: form.borrowerGroup,
 				mentorName: form.mentorName,
 				activityName: form.activityName,
+				itemType: selectedAssetType.value,
 				itemName: buildItemName(),
 				assetIds: [selectedAssetId.value],
 				borrowedAt: borrowedAtPayload,

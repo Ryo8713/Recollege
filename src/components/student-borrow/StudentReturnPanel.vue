@@ -38,6 +38,12 @@
 					<div class="flex flex-wrap items-center gap-2">
 						<p class="font-semibold text-slate-900">{{ record.itemName }}</p>
 						<span
+							v-if="getItemTypeLabel(record.itemType)"
+							class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700"
+						>
+							{{ getItemTypeLabel(record.itemType) }}
+						</span>
+						<span
 							v-if="record.returnPending"
 							class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800"
 						>
@@ -69,6 +75,7 @@
 
 <script setup lang="ts">
 import { isOverdue, type ReturnSearchRecord } from "../../stores/rental";
+import { getItemTypeLabel } from "../../types/rental";
 import { formatTemporalZh } from "../../utils/date";
 
 defineProps<{

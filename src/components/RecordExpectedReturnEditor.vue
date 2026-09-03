@@ -103,7 +103,7 @@ const isVenue = computed(() => {
 		const asset = assetsStore.assets.find((item) => item.id === assetId);
 		if (asset) return asset.type === "venue";
 	}
-	return props.record.itemName.startsWith("空間:");
+	return props.record.itemType === "venue";
 });
 
 const canSave = computed(() => {
