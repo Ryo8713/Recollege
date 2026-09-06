@@ -1,6 +1,6 @@
-import { computed, onMounted, ref, watch, type Ref } from "vue";
+import { computed, ref, watch, type Ref } from "vue";
 import { sheetsApi } from "../services/sheetsApi";
-import { addDays, computeNextWorkingDay, getEquipmentReturnCandidateDates, isWorkingDayText } from "../utils/date";
+import { addDays, computeNextWorkingDay, isWorkingDayText } from "../utils/date";
 import { getVenueOpenHours } from "../utils/venueHours";
 import type { Asset, VenueAvailability } from "../types/rental";
 
@@ -41,7 +41,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const returnDateError = ref("");
 	const returnDateRequestSeq = ref(0);
 	const returnDateCache = new Map<string, string[]>();
-	const returnDateInFlight = new Map<string, Promise<string[]>>();
 
 	const blockedRangesByAssetId = ref<Record<string, Array<{ start: string; end: string }>>>({});
 	const globalPauseRanges = ref<Array<{ start: string; end: string }>>([]);
@@ -56,7 +55,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const lookupError = ref("");
 	const lookupRequestSeq = ref(0);
 	const lookupDatesCache = new Map<string, string[]>();
-	const lookupDatesInFlight = new Map<string, Promise<string[]>>();
 
 	const venueAvailability = ref<VenueAvailability | null>(null);
 	const venueStartHours = ref<number[]>([]);
@@ -65,27 +63,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const venueAvailabilityRequestSeq = ref(0);
 	const venueAvailabilityCache = new Map<string, VenueAvailability>();
 	const venueAvailabilityInFlight = new Map<string, Promise<VenueAvailability>>();
-	const venuePrecomputeQueuedKeys = new Set<string>();
-	const venuePrecomputeQueue: Array<{ assetId: string; date: string }> = [];
-	let venuePrecomputeActiveCount = 0;
-	const VENUE_PRECOMPUTE_CONCURRENCY = 3;
-
-	// ===== 通用小工具 =====
-	function getAssets(): Asset[] {
-		return assets.value;
-	}
-
-	function getDateWindow(fromDate: string, windowDays: number): string[] {
-		const dates: string[] = [];
-		for (let day = 0; day < windowDays; day += 1) {
-			dates.push(addDays(fromDate, day));
-		}
-		return dates;
-	}
-
-	function isVenueAsset(assetId: string): boolean {
-		return getAssets().some((asset) => asset.id === assetId && asset.type === "venue");
-	}
 
 	// ===== blocked ranges =====
 	function shouldRefreshBlockedRanges(): boolean { 
@@ -146,38 +123,35 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return [...globalPauseRanges.value, ...assetRanges];
 	}
 
-	// ===== 本地可借計算 =====
-	function hasAnyAvailableReturnDate(
-		borrowedAt: string,
-		ranges: Array<{ start: string; end: string }>,
-	): boolean {
-		for (const expectedReturnAt of getEquipmentReturnCandidateDates(borrowedAt, holidayDates.value)) {
-			if (!isBlockedByRanges(borrowedAt, expectedReturnAt, ranges)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	function computeAvailableReturnDate(assetId: string, borrowedAt: string): string[] {
 		const blockedRanges = getCombinedBlockedRanges(assetId);
 		const expectedReturnAt = computeNextWorkingDay(borrowedAt, holidayDates.value);
 		return isBlockedByRanges(borrowedAt, expectedReturnAt, blockedRanges) ? [borrowedAt] : [expectedReturnAt];
 	}
 
-	function computeAssetAvailabilityDatesLocally(assetId: string, fromDate: string, windowDays: number): string[] {
-		const asset = getAssets().find((item) => item.id === assetId);
+	function computeAssetAvailabilityDates(assetId: string, fromDate: string, windowDays: number): string[] {
+		const asset = assets.value.find((item) => item.id === assetId);
 		if (!asset || asset.status === "停用中") return [];
 
-		const blockedRanges = getCombinedBlockedRanges(assetId);
 		const dates: string[] = [];
+		if (asset.type === "venue") {
+			const pauseRanges = blockedRangesByAssetId.value[assetId] ?? [];
+			for (let day = 0; day < windowDays; day += 1) {
+				const startDate = addDays(fromDate, day);
+				if (isGloballyClosedDate(startDate)) continue;
+				if (isBlockedOnDate(startDate, pauseRanges)) continue;
+				dates.push(startDate);
+			}
+			return dates;
+		}
+
+		const blockedRanges = getCombinedBlockedRanges(assetId);
 		for (let day = 0; day < windowDays; day += 1) {
 			const startDate = addDays(fromDate, day);
 			if (isGloballyClosedDate(startDate)) continue;
 			if (!isWorkingDayText(startDate, holidayDates.value)) continue;
-			if (hasAnyAvailableReturnDate(startDate, blockedRanges)) {
-				dates.push(startDate);
-			}
+			if (isBlockedOnDate(startDate, blockedRanges)) continue;
+			dates.push(startDate);
 		}
 		return dates;
 	}
@@ -187,7 +161,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	): { venues: Asset[]; equipments: Asset[] } {
 		const venues: Asset[] = [];
 		const equipments: Asset[] = [];
-		const allAssets = getAssets();
+		const allAssets = assets.value;
 		for (let i = 0; i < allAssets.length; i += 1) {
 			const asset = allAssets[i];
 			const blockedRanges = blockedRangesByAssetId.value[asset.id] ?? [];
@@ -205,13 +179,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	function applyAvailabilityResult(result: { venues: Asset[]; equipments: Asset[] }) {
 		availableVenues.value = result.venues;
 		availableEquipments.value = result.equipments;
-
-		if (form.borrowedAt && result.venues.length > 0) {
-			precomputeVenueAvailabilityInBackground(
-				result.venues.map((venue) => venue.id),
-				[form.borrowedAt],
-			);
-		}
 	}
 
 	function scheduleLoadAvailability() {
@@ -248,7 +215,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				availabilityError.value = "";
 				return;
 			}
-			if (ready && getAssets().length > 0) {
+			if (ready && assets.value.length > 0) {
 				const localResult = computeAvailableAssets(form.borrowedAt);
 				availabilityCache.set(form.borrowedAt, localResult);
 				applyAvailabilityResult(localResult);
@@ -301,33 +268,15 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 
 		returnDateLoading.value = true;
 		try {
+			const ready = await blockedRangesReady();
 			if (seq !== returnDateRequestSeq.value) return;
-			if (await blockedRangesReady()) {
-				const dates = computeAvailableReturnDate(selectedAssetId.value, form.borrowedAt);
-				returnDateCache.set(key, dates);
-				availableReturnDates.value = dates;
+			if (!ready) {
+				returnDateError.value = "無法載入占用資料，請稍後再試";
 				return;
 			}
-
-			const inFlight = returnDateInFlight.get(key);
-			const request =
-				inFlight ??
-				sheetsApi
-					.fetchAvailableReturnDates(selectedAssetId.value, form.borrowedAt)
-					.then((result) => {
-						const dates = result.dates ?? [];
-						returnDateCache.set(key, dates);
-						return dates;
-					})
-					.finally(() => {
-						returnDateInFlight.delete(key);
-					});
-			if (!inFlight) {
-				returnDateInFlight.set(key, request);
-			}
-			const dates = await request;
-			if (seq !== returnDateRequestSeq.value) return;
-			availableReturnDates.value = dates;
+			const date = computeAvailableReturnDate(selectedAssetId.value, form.borrowedAt);
+			returnDateCache.set(key, date);
+			availableReturnDates.value = date;
 		} catch (error) {
 			if (seq !== returnDateRequestSeq.value) return;
 			returnDateError.value = error instanceof Error ? error.message : "讀取可歸還日期失敗";
@@ -339,22 +288,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	}
 
 	// ===== 可借日期查詢（asset-first）=====
-	function precomputeLookupDatesInBackground(fromDate = today, windowDays = AVAILABILITY_WINDOW_DAYS) {
-		const assetList = getAssets();
-		if (assetList.length === 0) return;
-
-		setTimeout(() => {
-			for (let i = 0; i < assetList.length; i += 1) {
-				const asset = assetList[i];
-				if (asset.status === "停用中" || asset.type === "venue") continue;
-				const key = `${asset.id}|${fromDate}|${windowDays}`;
-				if (lookupDatesCache.has(key)) continue;
-				const dates = computeAssetAvailabilityDatesLocally(asset.id, fromDate, windowDays);
-				lookupDatesCache.set(key, dates);
-			}
-		}, 0);
-	}
-
 	async function loadAssetAvailabilityDates() {
 		if (!selectedLookupAssetId.value) return;
 		const seq = ++lookupRequestSeq.value;
@@ -364,9 +297,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			lookupLoading.value = false;
 			lookupError.value = "";
 			lookupDates.value = cached;
-			if (isVenueAsset(selectedLookupAssetId.value)) {
-				precomputeVenueAvailabilityInBackground([selectedLookupAssetId.value], cached);
-			}
 			return;
 		}
 		lookupLoading.value = true;
@@ -376,36 +306,17 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		try {
 			const ready = await blockedRangesReady();
 			if (seq !== lookupRequestSeq.value) return;
-			if (ready && getAssets().length > 0 && !isVenueAsset(selectedLookupAssetId.value)) {
-				const dates = computeAssetAvailabilityDatesLocally(selectedLookupAssetId.value, today, AVAILABILITY_WINDOW_DAYS);
-				lookupDatesCache.set(key, dates);
-				lookupDates.value = dates;
-				precomputeLookupDatesInBackground(today, AVAILABILITY_WINDOW_DAYS);
+			if (!ready) {
+				lookupError.value = "無法載入占用資料，請稍後再試";
 				return;
 			}
-
-			const inFlight = lookupDatesInFlight.get(key);
-			const request =
-				inFlight ??
-				sheetsApi
-					.fetchAssetAvailabilityDates(selectedLookupAssetId.value, today, AVAILABILITY_WINDOW_DAYS)
-					.then((result) => {
-						const dates = result.dates ?? [];
-						lookupDatesCache.set(key, dates);
-						return dates;
-					})
-					.finally(() => {
-						lookupDatesInFlight.delete(key);
-					});
-			if (!inFlight) {
-				lookupDatesInFlight.set(key, request);
-			}
-			const dates = await request;
-			if (seq !== lookupRequestSeq.value) return;
+			const dates = computeAssetAvailabilityDates(
+				selectedLookupAssetId.value,
+				today,
+				AVAILABILITY_WINDOW_DAYS,
+			);
+			lookupDatesCache.set(key, dates);
 			lookupDates.value = dates;
-			if (isVenueAsset(selectedLookupAssetId.value)) {
-				precomputeVenueAvailabilityInBackground([selectedLookupAssetId.value], dates);
-			}
 		} catch (error) {
 			if (seq !== lookupRequestSeq.value) return;
 			lookupError.value = error instanceof Error ? error.message : "查詢可借日期失敗";
@@ -416,20 +327,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		}
 	}
 
-	// ===== 空間可借時段（venue availability）=====
-	const venueOccupiedHourSet = computed(() => {
-		const set = new Set<number>();
-		const availability = venueAvailability.value;
-		if (!availability) return set;
-		for (const interval of availability.occupied) {
-			for (let hour = interval.start; hour < interval.end; hour += 1) {
-				set.add(hour);
-			}
-		}
-		return set;
-	});
-
-	async function fetchVenueAvailability(assetId: string, date: string): Promise<VenueAvailability> {
+	async function getVenueAvailability(assetId: string, date: string): Promise<VenueAvailability> {
 		const key = `${assetId}|${date}`;
 		const cached = venueAvailabilityCache.get(key);
 		if (cached) return cached;
@@ -442,12 +340,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			.then((result) => {
 				const open = getVenueOpenHours(date, holidayDates.value);
 				const occupied = result.occupied ?? [];
-				const occupiedHours = new Set<number>();
-				for (const interval of occupied) {
-					for (let hour = interval.start; hour < interval.end; hour += 1) {
-						occupiedHours.add(hour);
-					}
-				}
 				const view: VenueAvailability = {
 					assetId,
 					date,
@@ -455,9 +347,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 					openEnd: open.end,
 					isHoliday: open.start === 8,
 					occupied,
-					closed: Array.from({ length: open.end - open.start }, (_, index) => open.start + index).every((hour) =>
-						occupiedHours.has(hour),
-					),
 				};
 				venueAvailabilityCache.set(key, view);
 				return view;
@@ -476,7 +365,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		const seq = ++venueAvailabilityRequestSeq.value;
 		venueAvailabilityLoading.value = true;
 		try {
-			const availability = await fetchVenueAvailability(assetId, date);
+			const availability = await getVenueAvailability(assetId, date);
 			venueAvailability.value = availability;
 			const open = getVenueOpenHours(date, holidayDates.value);
 			const occupiedHours = new Set<number>();
@@ -501,60 +390,14 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		}
 	}
 
-	function precomputeVenueAvailabilityInBackground(assetIds: string[], dates: string[]) {
-		if (assetIds.length === 0 || dates.length === 0) return;
-		setTimeout(() => {
-			for (const assetId of assetIds) {
-				for (const date of dates) {
-					const key = `${assetId}|${date}`;
-					if (venueAvailabilityCache.has(key) || venueAvailabilityInFlight.has(key) || venuePrecomputeQueuedKeys.has(key)) {
-						continue;
-					}
-					venuePrecomputeQueuedKeys.add(key);
-					venuePrecomputeQueue.push({ assetId, date });
-				}
-			}
-			processVenuePrecomputeQueue();
-		}, 0);
-	}
-
-	function processVenuePrecomputeQueue() {
-		while (venuePrecomputeActiveCount < VENUE_PRECOMPUTE_CONCURRENCY && venuePrecomputeQueue.length > 0) {
-			const job = venuePrecomputeQueue.shift();
-			if (!job) return;
-			const key = `${job.assetId}|${job.date}`;
-			venuePrecomputeQueuedKeys.delete(key);
-			if (venueAvailabilityCache.has(key)) continue;
-
-			venuePrecomputeActiveCount += 1;
-				void fetchVenueAvailability(job.assetId, job.date)
-				.catch(() => undefined)
-				.finally(() => {
-					venuePrecomputeActiveCount -= 1;
-					processVenuePrecomputeQueue();
-				});
-		}
-	}
-
-	function precomputeAllVenueAvailabilityInBackground(windowDays = AVAILABILITY_WINDOW_DAYS) {
-		const venueAssetIds = getAssets()
-			.filter((asset) => asset.type === "venue" && asset.status !== "停用中")
-			.map((asset) => asset.id);
-		precomputeVenueAvailabilityInBackground(venueAssetIds, getDateWindow(today, windowDays));
-	}
-
 	// ===== 快取管理 =====
 	function clearAvailabilityCaches() {
 		availabilityCache.clear();
 		availabilityInFlight.clear();
 		returnDateCache.clear();
-		returnDateInFlight.clear();
 		lookupDatesCache.clear();
-		lookupDatesInFlight.clear();
 		venueAvailabilityCache.clear();
 		venueAvailabilityInFlight.clear();
-		venuePrecomputeQueuedKeys.clear();
-		venuePrecomputeQueue.length = 0;
 		blockedRangesInFlight = null;
 	}
 
@@ -573,7 +416,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		form.borrowedAt = date;
 		form.expectedReturnAt = "";
 
-		const selectedAsset = getAssets().find((a) => a.id === selectedLookupAssetId.value);
+		const selectedAsset = assets.value.find((a) => a.id === selectedLookupAssetId.value);
 		if (selectedAsset) {
 			selectedAssetId.value = selectedAsset.id;
 			selectedAssetType.value = selectedAsset.type;
@@ -591,8 +434,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	async function refreshBorrowAvailability() {
 		clearAvailabilityCaches();
 		await blockedRangesReady(true);
-		precomputeLookupDatesInBackground(today, AVAILABILITY_WINDOW_DAYS);
-		precomputeAllVenueAvailabilityInBackground(AVAILABILITY_WINDOW_DAYS);
 		if (mode.value !== "borrow") return;
 
 		if (borrowEntryMode.value === "dateFirst") {
@@ -614,7 +455,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		}
 	}
 
-	// ===== Watchers 與生命週期 =====
 	watch(
 		() => [form.borrowedAt, mode.value, borrowEntryMode.value],
 		() => {
@@ -660,24 +500,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		},
 	);
 
-	watch(
-		() => assets.value.length,
-		() => {
-			if (!blockedRangesLoadedAt.value) return;
-			precomputeLookupDatesInBackground(today, AVAILABILITY_WINDOW_DAYS);
-			precomputeAllVenueAvailabilityInBackground(AVAILABILITY_WINDOW_DAYS);
-		},
-	);
-
-	onMounted(() => {
-		void blockedRangesReady().then((ready) => {
-			if (ready) {
-				precomputeLookupDatesInBackground(today, AVAILABILITY_WINDOW_DAYS);
-				precomputeAllVenueAvailabilityInBackground(AVAILABILITY_WINDOW_DAYS);
-			}
-		});
-	});
-
 	return {
 		selectedAssetId,
 		selectedAssetType,
@@ -696,7 +518,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		venueAvailabilityLoading,
 		venueAvailabilityError,
 		venueStartHours,
-		fetchVenueAvailability,
+		getVenueAvailability,
 		selectAsset,
 		applyBorrowDate,
 		clearAvailabilityCaches,

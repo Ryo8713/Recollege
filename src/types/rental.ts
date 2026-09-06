@@ -109,5 +109,4 @@ export interface VenueAvailability {
     openEnd: number;
     isHoliday: boolean;
     occupied: Array<{ start: number; end: number }>;
-    closed: boolean;
 }

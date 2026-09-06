@@ -24,18 +24,6 @@ interface AvailabilityResponse {
     equipments: Asset[];
 }
 
-interface AssetAvailabilityDatesResponse {
-    assetId: string;
-    fromDate: string;
-    dates: string[];
-}
-
-interface AvailableReturnDatesResponse {
-    assetId: string;
-    borrowedAt: string;
-    dates: string[];
-}
-
 interface AssetBlockedRangesResponse {
     today: string;
     blockedRangesByAssetId: Record<string, Array<{ start: string; end: string }>>;
@@ -140,25 +128,6 @@ export const sheetsApi = {
 
     async fetchAvailabilityByStartDate(borrowedAt: string): Promise<AvailabilityResponse> {
         return request<AvailabilityResponse>("availability", undefined, { borrowedAt });
-    },
-
-    async fetchAssetAvailabilityDates(
-        assetId: string,
-        fromDate: string,
-        windowDays = 30,
-    ): Promise<AssetAvailabilityDatesResponse> {
-        return request<AssetAvailabilityDatesResponse>("asset-availability-dates", undefined, {
-            assetId,
-            fromDate,
-            windowDays: String(windowDays),
-        });
-    },
-
-    async fetchAvailableReturnDates(assetId: string, borrowedAt: string): Promise<AvailableReturnDatesResponse> {
-        return request<AvailableReturnDatesResponse>("available-return-dates", undefined, {
-            assetId,
-            borrowedAt,
-        });
     },
 
     async fetchAssetBlockedRanges(): Promise<AssetBlockedRangesResponse> {

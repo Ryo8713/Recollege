@@ -77,10 +77,8 @@ function formatHour(hour: number): string {
 /** 職員可選的空間結束整點（不含與他人重疊的時段）。 */
 export function computeValidVenueEndHours(
 	record: BorrowRecord,
-	availability: VenueOccupiedSlots & { openEnd?: number; closed?: boolean },
+	availability: VenueOccupiedSlots & { openEnd?: number },
 ): string[] {
-	if (availability.closed) return [];
-
 	const startHour = parseHour(record.borrowedAt.slice(11, 16));
 	const currentEndHour = parseHour(record.expectedReturnAt.slice(11, 16));
 	const openEnd = availability.openEnd ?? 23;

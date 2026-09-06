@@ -12,7 +12,7 @@ export function useVenueLookupPreview(options: {
 	selectedLookupVenueId: Ref<string>;
 	lookupDates: Ref<string[]>;
 	earliestBorrowDate: Ref<string>;
-	fetchVenueAvailability: (assetId: string, date: string) => Promise<VenueAvailability>;
+	getVenueAvailability: (assetId: string, date: string) => Promise<VenueAvailability>;
 }) {
 	const venueLookupPreviews = ref<VenueLookupPreview[]>([]);
 	const venueLookupPreviewLoading = ref(false);
@@ -24,7 +24,6 @@ export function useVenueLookupPreview(options: {
 	);
 
 	function getAvailableSlotLabels(availability: VenueAvailability): string[] {
-		if (availability.closed) return [];
 		const occupied = new Set<number>();
 		for (const interval of availability.occupied) {
 			for (let hour = interval.start; hour < interval.end; hour += 1) {
@@ -59,7 +58,7 @@ export function useVenueLookupPreview(options: {
 						nextIndex += 1;
 						if (seq !== venueLookupPreviewSeq.value) return;
 
-						const availability = await options.fetchVenueAvailability(
+						const availability = await options.getVenueAvailability(
 							options.selectedLookupVenueId.value,
 							date,
 						);

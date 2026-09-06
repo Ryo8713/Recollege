@@ -158,7 +158,7 @@ const {
 	venueAvailabilityLoading,
 	venueAvailabilityError,
 	venueStartHours,
-	fetchVenueAvailability,
+	getVenueAvailability,
 	selectAsset,
 	applyBorrowDate,
 	clearAvailabilityCaches,
@@ -222,7 +222,7 @@ const {
 	lookupDates,
 	lookupLoading,
 	lookupError,
-	fetchVenueAvailability,
+	getVenueAvailability,
 });
 
 const remoteRefreshContext: {
@@ -305,6 +305,11 @@ const {
 });
 
 onMounted(() => {
-	void Promise.all([loadHolidays(), rentalStore.loadStudentBlocks()]);
+	void Promise.all([
+		assetsStore.loadAssets(),
+		blockedRangesReady(),
+		loadHolidays(),
+		rentalStore.loadStudentBlocks(),
+	]);
 });
 </script>

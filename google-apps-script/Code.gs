@@ -179,12 +179,6 @@ function routeRequest_(method, e) {
       return jsonResponse_(listAssetAvailableDates_(assetId, fromDate, windowDays));
     }
 
-    if (path === "available-return-dates" && method === "GET") {
-      const assetId = requireField_(e && e.parameter && e.parameter.assetId, "assetId");
-      const borrowedAt = requireDateText_(e && e.parameter && e.parameter.borrowedAt, "borrowedAt");
-      return jsonResponse_(listAvailableReturnDates_(assetId, borrowedAt));
-    }
-
     if (path === "asset-blocked-ranges" && method === "GET") {
       return jsonResponse_(listAssetBlockedRanges_());
     }
@@ -1209,17 +1203,10 @@ function listAvailableAssetsByStartDate_(borrowedAt) {
       continue;
     }
 
+    if (!isWorkingDayText_(borrowedAt, holidaySet)) continue;
     const blockedRanges = getAssetBlockedRanges_(asset.id, blockedRangeMap);
-    const globalPauseRanges = getGlobalPauseRanges_();
-    if (
-      hasAnyAvailableReturnDate_(
-        borrowedAt,
-        blockedRanges,
-        globalPauseRanges
-      )
-    ) {
-      equipments.push(asset);
-    }
+    if (isDateWithinAnyRange_(borrowedAt, blockedRanges)) continue;
+    equipments.push(asset);
   }
 
   return { venues: venues, equipments: equipments };
@@ -1315,9 +1302,8 @@ function listAssetAvailableDates_(assetId, fromDate, windowDays) {
     const startDate = addDaysText_(fromDate, day);
     if (isGloballyClosedDate_(startDate, globalPauseRanges)) continue;
     if (!isWorkingDayText_(startDate, getHolidaySet_())) continue;
-    if (hasAnyAvailableReturnDate_(startDate, blockedRanges, globalPauseRanges)) {
-      dates.push(startDate);
-    }
+    if (isDateWithinAnyRange_(startDate, blockedRanges)) continue;
+    dates.push(startDate);
   }
 
   return {
@@ -1325,35 +1311,6 @@ function listAssetAvailableDates_(assetId, fromDate, windowDays) {
     fromDate: fromDate,
     dates: dates,
   };
-}
-
-function listAvailableReturnDates_(assetId, borrowedAt) {
-  ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
-
-  const targetAsset = getAssetOrThrow_(assetId);
-  if (targetAsset.status === "停用中") {
-    return { assetId: assetId, borrowedAt: borrowedAt, dates: [] };
-  }
-  if (isGloballyClosedDate_(borrowedAt)) {
-    return { assetId: assetId, borrowedAt: borrowedAt, dates: [] };
-  }
-  if (targetAsset.type === "venue") {
-    // 空間以小時計，歸還日由 venue-occupied-slots 端點處理
-    return { assetId: assetId, borrowedAt: borrowedAt, dates: [] };
-  }
-
-  const blockedRanges = getAssetBlockedRanges_(assetId);
-  const globalPauseRanges = getGlobalPauseRanges_();
-  const dates = [];
-  var candidateDates = getEquipmentReturnCandidateDates_(borrowedAt);
-  for (var c = 0; c < candidateDates.length; c++) {
-    var expectedReturnAt = candidateDates[c];
-    if (isBlockedByRanges_(borrowedAt, expectedReturnAt, globalPauseRanges)) continue;
-    if (!isBlockedByRanges_(borrowedAt, expectedReturnAt, blockedRanges)) {
-      dates.push(expectedReturnAt);
-    }
-  }
-  return { assetId: assetId, borrowedAt: borrowedAt, dates: dates };
 }
 
 function listAssetBlockedRanges_() {
@@ -2269,31 +2226,6 @@ function computeNextWorkingDayText_(dateText) {
     date = addDaysText_(date, 1);
   }
   return date;
-}
-
-function getEquipmentReturnCandidateDates_(borrowedAt) {
-  var holidaySet = getHolidaySet_();
-  if (!isWorkingDayText_(borrowedAt, holidaySet)) return [];
-  var idealReturnAt = computeNextWorkingDayText_(borrowedAt);
-  var dates = [];
-  var date = borrowedAt;
-  for (var i = 0; i < 365; i++) {
-    if (date > idealReturnAt) break;
-    if (isWorkingDayText_(date, holidaySet)) dates.push(date);
-    date = addDaysText_(date, 1);
-  }
-  return dates;
-}
-
-function hasAnyAvailableReturnDate_(borrowedAt, blockedRanges, globalPauseRanges) {
-  if (!isWorkingDayText_(borrowedAt, getHolidaySet_())) return false;
-  var candidateDates = getEquipmentReturnCandidateDates_(borrowedAt);
-  for (var c = 0; c < candidateDates.length; c++) {
-    var expectedReturnAt = candidateDates[c];
-    if (isBlockedByRanges_(borrowedAt, expectedReturnAt, globalPauseRanges)) continue;
-    if (!isBlockedByRanges_(borrowedAt, expectedReturnAt, blockedRanges)) return true;
-  }
-  return false;
 }
 
 function ensureDateRange_(borrowedAt, expectedReturnAt) {

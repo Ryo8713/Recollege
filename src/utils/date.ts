@@ -79,22 +79,6 @@ export function computeNextWorkingDay(dateText: string, holidayDates: Set<string
 	return date;
 }
 
-export function getEquipmentReturnCandidateDates(
-	borrowedAt: string,
-	holidayDates: Set<string>,
-): string[] {
-	if (!isWorkingDayText(borrowedAt, holidayDates)) return [];
-	const idealReturnAt = computeNextWorkingDay(borrowedAt, holidayDates);
-	const dates: string[] = [];
-	let date = borrowedAt;
-	for (let i = 0; i < 365; i += 1) {
-		if (date > idealReturnAt) break;
-		if (isWorkingDayText(date, holidayDates)) dates.push(date);
-		date = addDays(date, 1);
-	}
-	return dates;
-}
-
 export function formatDateZh(value: string): string {
 	const text = String(value || "").trim();
 	if (!text) return "";
