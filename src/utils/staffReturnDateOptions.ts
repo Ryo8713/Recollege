@@ -1,5 +1,5 @@
 import { addDays, isWorkingDayText } from "./date";
-import type { BorrowRecord, VenueAvailability } from "../types/rental";
+import type { BorrowRecord, VenueOccupiedSlots } from "../types/rental";
 
 function datePart(value: string): string {
 	return String(value || "").trim().slice(0, 10);
@@ -22,7 +22,7 @@ export function findConflictingBorrowRecord(
 	expectedReturnAt: string,
 	allRecords: BorrowRecord[],
 ): BorrowRecord | null {
-	const assetId = record.assetIds[0];
+	const assetId = record.assetId;
 	if (!assetId) return null;
 
 	const borrowedDate = datePart(record.borrowedAt);
@@ -31,7 +31,7 @@ export function findConflictingBorrowRecord(
 	for (const other of allRecords) {
 		if (other.id === record.id) continue;
 		if (other.status !== "租借中" && other.status !== "待生效") continue;
-		if (!other.assetIds.includes(assetId)) continue;
+		if (other.assetId !== assetId) continue;
 
 		const otherStart = datePart(other.borrowedAt);
 		const otherEnd = datePart(other.expectedReturnAt);
@@ -77,20 +77,17 @@ function formatHour(hour: number): string {
 /** 職員可選的空間結束整點（不含與他人重疊的時段）。 */
 export function computeValidVenueEndHours(
 	record: BorrowRecord,
-	availability: VenueAvailability,
+	availability: VenueOccupiedSlots & { openEnd?: number; closed?: boolean },
 ): string[] {
 	if (availability.closed) return [];
 
 	const startHour = parseHour(record.borrowedAt.slice(11, 16));
 	const currentEndHour = parseHour(record.expectedReturnAt.slice(11, 16));
-	const openEnd = availability.openEnd ? parseHour(availability.openEnd) : 23;
+	const openEnd = availability.openEnd ?? 23;
 
-	const otherIntervals = availability.occupied
-		.map((interval) => ({
-			start: parseHour(interval.start),
-			end: parseHour(interval.end),
-		}))
-		.filter((interval) => !(interval.start === startHour && interval.end === currentEndHour));
+	const otherIntervals = availability.occupied.filter(
+		(interval) => !(interval.start === startHour && interval.end === currentEndHour),
+	);
 
 	const hours: string[] = [];
 	for (let endHour = startHour + 1; endHour <= openEnd; endHour += 1) {

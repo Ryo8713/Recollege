@@ -84,8 +84,8 @@ export const useRentalStore = defineStore("rental", () => {
         return reviewingApplicationIds.value.includes(applicationId);
     }
 
-    function setAssetStatusesLocally(assetIds: string[], nextStatus: "可租借" | "已借出") {
-        assetIds.forEach((id) => assetsStore.setAssetStatus(id, nextStatus));
+    function setAssetStatusLocally(assetId: string, nextStatus: "可租借" | "已借出") {
+        assetsStore.setAssetStatus(assetId, nextStatus);
     }
 
     function shouldLoadByTimestamp(loadedAt: number, force = false): boolean {
@@ -186,7 +186,7 @@ export const useRentalStore = defineStore("rental", () => {
         activityName: string;
         itemType: ItemType;
         itemName: string;
-        assetIds: string[];
+        assetId: string;
         borrowedAt: string;
         expectedReturnAt: string;
     }) {
@@ -222,10 +222,7 @@ export const useRentalStore = defineStore("rental", () => {
         const previousRejectionReason = app.rejectionReason;
         const reviewedAt = getTodayText();
         const shouldBeActiveNow = app.borrowedAt.slice(0, 10) <= reviewedAt;
-        const previousAssetStatuses = app.assetIds.map((assetId) => {
-            const asset = assetsStore.assets.find((a) => a.id === assetId);
-            return { assetId, status: asset?.status };
-        });
+        const previousAssetStatus = assetsStore.assets.find((a) => a.id === app.assetId)?.status;
 
         let optimisticRecord: BorrowRecord | null = null;
         let previousReturnRecordState: Pick<BorrowRecord, "status" | "returnedAt" | "returnRequestStatus"> | null = null;
@@ -247,7 +244,7 @@ export const useRentalStore = defineStore("rental", () => {
                 activityName: app.activityName,
                 itemType: app.itemType,
                 itemName: app.itemName,
-                assetIds: app.assetIds,
+                assetId: app.assetId,
                 borrowedAt: app.borrowedAt,
                 expectedReturnAt: app.expectedReturnAt,
                 status: shouldBeActiveNow ? "租借中" : "待生效",
@@ -255,7 +252,7 @@ export const useRentalStore = defineStore("rental", () => {
             };
             records.value.unshift(optimisticRecord);
             if (shouldBeActiveNow) {
-                setAssetStatusesLocally(app.assetIds, "已借出");
+                setAssetStatusLocally(app.assetId, "已借出");
             }
         }
 
@@ -270,7 +267,7 @@ export const useRentalStore = defineStore("rental", () => {
                 record.status = "已歸還";
                 record.returnedAt = reviewedAt;
                 record.returnRequestStatus = "";
-                setAssetStatusesLocally(record.assetIds, "可租借");
+                setAssetStatusLocally(record.assetId, "可租借");
             }
         }
 
@@ -304,9 +301,9 @@ export const useRentalStore = defineStore("rental", () => {
                 }
             }
 
-            previousAssetStatuses.forEach(({ assetId, status }) => {
-                if (status) assetsStore.setAssetStatus(assetId, status);
-            });
+            if (previousAssetStatus) {
+                assetsStore.setAssetStatus(app.assetId, previousAssetStatus);
+            }
 
             reviewError.value = error instanceof Error ? error.message : "審核失敗，請稍後再試。";
         } finally {
@@ -411,7 +408,7 @@ export const useRentalStore = defineStore("rental", () => {
             activityName: record.activityName,
             itemType: record.itemType,
             itemName: record.itemName,
-            assetIds: record.assetIds,
+            assetId: record.assetId,
             borrowedAt: record.borrowedAt,
             expectedReturnAt: record.expectedReturnAt,
             recordId: payload.recordId,
@@ -430,7 +427,7 @@ export const useRentalStore = defineStore("rental", () => {
         activityName: record.activityName,
         itemType: record.itemType,
         itemName: record.itemName,
-        assetIds: record.assetIds,
+        assetId: record.assetId,
         borrowedAt: record.borrowedAt,
         expectedReturnAt: record.expectedReturnAt,
         recordId: payload.recordId,

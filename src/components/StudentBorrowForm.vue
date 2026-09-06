@@ -158,11 +158,11 @@ const {
 	venueAvailabilityLoading,
 	venueAvailabilityError,
 	venueStartHours,
-	fetchVenueOccupiedSlotsCached,
+	fetchVenueAvailability,
 	selectAsset,
 	applyBorrowDate,
 	clearAvailabilityCaches,
-	loadBlockedRanges,
+	blockedRangesReady,
 	refreshBorrowAvailability,
 } = useBorrowAvailability({
 	assets,
@@ -222,7 +222,7 @@ const {
 	lookupDates,
 	lookupLoading,
 	lookupError,
-	fetchVenueOccupiedSlotsCached,
+	fetchVenueAvailability,
 });
 
 const remoteRefreshContext: {
@@ -262,7 +262,7 @@ const {
 		isSubmitting,
 		onSubmitted: () => {
 			clearAvailabilityCaches();
-			void loadBlockedRanges(true);
+			void blockedRangesReady(true);
 		},
 		syncDataVersion: () => syncDataVersionSnapshot(),
 	},
@@ -291,7 +291,7 @@ const {
 	availableReturnDates,
 	availabilityLoading,
 	clearAvailabilityCaches,
-	loadBlockedRanges,
+	blockedRangesReady,
 	resetVenueSlots,
 	earliestBorrowDate,
 	isVenueSelected,

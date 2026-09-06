@@ -12,7 +12,7 @@ export function useVenueLookupPreview(options: {
 	selectedLookupVenueId: Ref<string>;
 	lookupDates: Ref<string[]>;
 	earliestBorrowDate: Ref<string>;
-	fetchVenueOccupiedSlotsCached: (assetId: string, date: string) => Promise<VenueAvailability>;
+	fetchVenueAvailability: (assetId: string, date: string) => Promise<VenueAvailability>;
 }) {
 	const venueLookupPreviews = ref<VenueLookupPreview[]>([]);
 	const venueLookupPreviewLoading = ref(false);
@@ -27,17 +27,13 @@ export function useVenueLookupPreview(options: {
 		if (availability.closed) return [];
 		const occupied = new Set<number>();
 		for (const interval of availability.occupied) {
-			const start = Number(interval.start.slice(0, 2));
-			const end = Number(interval.end.slice(0, 2));
-			for (let hour = start; hour < end; hour += 1) {
+			for (let hour = interval.start; hour < interval.end; hour += 1) {
 				occupied.add(hour);
 			}
 		}
 
 		const slots: string[] = [];
-		const openStart = Number(availability.openStart.slice(0, 2));
-		const openEnd = Number(availability.openEnd.slice(0, 2));
-		for (let hour = openStart; hour < openEnd; hour += 1) {
+		for (let hour = availability.openStart; hour < availability.openEnd; hour += 1) {
 			if (!occupied.has(hour)) {
 				slots.push(formatHourRangeLabel(hour));
 			}
@@ -63,7 +59,7 @@ export function useVenueLookupPreview(options: {
 						nextIndex += 1;
 						if (seq !== venueLookupPreviewSeq.value) return;
 
-						const availability = await options.fetchVenueOccupiedSlotsCached(
+						const availability = await options.fetchVenueAvailability(
 							options.selectedLookupVenueId.value,
 							date,
 						);

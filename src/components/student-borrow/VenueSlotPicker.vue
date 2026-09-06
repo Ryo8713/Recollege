@@ -11,7 +11,7 @@
 		<div v-else-if="venueAvailability && !venueAvailability.closed" class="mt-2 space-y-3">
 			<p class="text-xs font-semibold text-slate-500">
 				{{ venueAvailability.isHoliday ? "假日" : "平日" }}可借用時段:
-				{{ venueAvailability.openStart }}–{{ venueAvailability.openEnd }}
+				{{ formatHourLabel(venueAvailability.openStart) }}–{{ formatHourLabel(venueAvailability.openEnd) }}
 			</p>
 			<div>
 				<p class="text-xs font-semibold text-slate-500">可借時段</p>
@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { formatHourRangeLabel } from "../../utils/venueHours";
+import { formatHourLabel, formatHourRangeLabel } from "../../utils/venueHours";
 import type { DateFirstVenueSlots } from "../../types/borrowForm";
 
 defineProps<DateFirstVenueSlots>();

@@ -37,7 +37,7 @@ export interface BorrowApplication {
     itemType: ItemType;
     /** 純項目名稱（不含「空間:」等前綴） */
     itemName: string;
-    assetIds: string[];
+    assetId: string;
     borrowedAt: string;
     expectedReturnAt: string;
     status: ApplicationStatus;
@@ -59,7 +59,7 @@ export interface BorrowRecord {
     activityName: string;
     itemType: ItemType;
     itemName: string;
-    assetIds: string[];
+    assetId: string;
     borrowedAt: string;
     expectedReturnAt: string;
     returnedAt?: string;
@@ -96,12 +96,18 @@ export interface StudentBlock {
     note: string;
 }
 
+/** Raw response from venue-occupied-slots API. */
+export interface VenueOccupiedSlots {
+    occupied: Array<{ start: number; end: number }>;
+}
+
+/** Enriched venue day availability used by the borrow UI. */
 export interface VenueAvailability {
     assetId: string;
     date: string;
-    openStart: string;
-    openEnd: string;
+    openStart: number;
+    openEnd: number;
     isHoliday: boolean;
-    occupied: Array<{ start: string; end: string }>;
+    occupied: Array<{ start: number; end: number }>;
     closed: boolean;
 }

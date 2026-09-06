@@ -98,7 +98,7 @@ const validEquipmentReturnDates = ref<string[]>([]);
 const validVenueEndHours = ref<string[]>([]);
 
 const isVenue = computed(() => {
-	const assetId = props.record.assetIds[0];
+	const assetId = props.record.assetId;
 	if (assetId) {
 		const asset = assetsStore.assets.find((item) => item.id === assetId);
 		if (asset) return asset.type === "venue";
@@ -148,7 +148,7 @@ async function loadEditOptions() {
 		await Promise.all([rentalStore.loadRecords({ force: true }), assetsStore.loadAssets()]);
 
 		if (isVenue.value) {
-			const assetId = props.record.assetIds[0];
+			const assetId = props.record.assetId;
 			const date = props.record.borrowedAt.slice(0, 10);
 			if (!assetId || !date) return;
 			const availability = await sheetsApi.fetchVenueOccupiedSlots(assetId, date);
@@ -158,7 +158,7 @@ async function loadEditOptions() {
 			return;
 		}
 
-		const assetId = props.record.assetIds[0];
+		const assetId = props.record.assetId;
 		if (!assetId) return;
 
 		const [blocked, assetPauses, holidays] = await Promise.all([

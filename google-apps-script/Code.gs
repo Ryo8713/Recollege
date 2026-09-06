@@ -20,7 +20,7 @@ const BORROW_APPLICATION_HEADERS = [
   "studentEmail",
   "itemName",
   "itemType",
-  "assetIds",
+  "assetId",
   "borrowedAt",
   "expectedReturnAt",
   "status",
@@ -36,7 +36,7 @@ const BORROW_APPLICATION_HEADERS = [
 // 欄位索引（0-based）；itemType 緊接 itemName 之後
 const APP_COL_ITEM_NAME = 6;
 const APP_COL_ITEM_TYPE = 7;
-const APP_COL_ASSET_IDS = 8;
+const APP_COL_ASSET_ID = 8;
 const APP_COL_BORROWED_AT = 9;
 const APP_COL_EXPECTED_RETURN_AT = 10;
 const APP_COL_STATUS = 11;
@@ -56,7 +56,7 @@ const BORROW_RECORD_HEADERS = [
   "studentEmail",
   "itemName",
   "itemType",
-  "assetIds",
+  "assetId",
   "borrowedAt",
   "expectedReturnAt",
   "returnedAt",
@@ -69,7 +69,7 @@ const BORROW_RECORD_HEADERS = [
 // 欄位索引（0-based）；itemType 緊接 itemName 之後
 const RECORD_COL_ITEM_NAME = 5;
 const RECORD_COL_ITEM_TYPE = 6;
-const RECORD_COL_ASSET_IDS = 7;
+const RECORD_COL_ASSET_ID = 7;
 const RECORD_COL_BORROWED_AT = 8;
 const RECORD_COL_EXPECTED_RETURN_AT = 9;
 const RECORD_COL_RETURNED_AT = 10;
@@ -82,7 +82,6 @@ const VALID_TYPES = ["venue", "equipment"];
 const ITEM_TYPE_LABELS = { venue: "空間", equipment: "設備" };
 // 舊資料 itemName 為「空間:名稱」／「設備:名稱」格式，拆欄後以此解析前綴
 const LEGACY_ITEM_NAME_PREFIX_PATTERN = /^(空間|場地|設備|器材)\s*[:：]\s*/;
-const VALID_STATUS = ["可租借", "已借出", "停用中"];
 const VALID_APPLICATION_TYPES = ["借用申請", "歸還申請"];
 const VALID_APPLICATION_STATUS = ["待審核", "已核准", "已駁回"];
 const VALID_RECORD_STATUS = ["待生效", "租借中", "已歸還"];
@@ -302,8 +301,7 @@ function getAssetPauseSheet_() {
 }
 
 function getBorrowApplicationsSheet_() {
-  const sheet = getSheetWithHeaders_(SHEET_BORROW_APPLICATIONS, BORROW_APPLICATION_HEADERS);
-  ensureBorrowSheetColumnLayout_(sheet, BORROW_APPLICATION_HEADERS);
+  const sheet = getBorrowSheet_(SHEET_BORROW_APPLICATIONS, BORROW_APPLICATION_HEADERS);
   ensureColumnAsText_(sheet, 5); // studentPhone
   // 空間以小時計，borrowedAt/expectedReturnAt 可能為「YYYY-MM-DD HH:mm」，需存為純文字
   ensureColumnAsText_(sheet, APP_COL_BORROWED_AT + 1);
@@ -312,12 +310,25 @@ function getBorrowApplicationsSheet_() {
 }
 
 function getBorrowRecordsSheet_() {
-  const sheet = getSheetWithHeaders_(SHEET_BORROW_RECORDS, BORROW_RECORD_HEADERS);
-  ensureBorrowSheetColumnLayout_(sheet, BORROW_RECORD_HEADERS);
+  const sheet = getBorrowSheet_(SHEET_BORROW_RECORDS, BORROW_RECORD_HEADERS);
   ensureColumnAsText_(sheet, 4); // studentPhone
-  // 空間以小時計，borrowedAt/expectedReturnAt 可能為「YYYY-MM-DD HH:mm」，需存為純文字
   ensureColumnAsText_(sheet, RECORD_COL_BORROWED_AT + 1);
   ensureColumnAsText_(sheet, RECORD_COL_EXPECTED_RETURN_AT + 1);
+  return sheet;
+}
+
+// 借用兩表的欄位順序由 ensureBorrowSheetColumnLayout_ 依表頭名稱維護，
+// 不能走 ensureHeaders_（表頭改名時它會插入空白列，把舊表頭擠成資料列）。
+function getBorrowSheet_(sheetName, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+  ensureBorrowSheetColumnLayout_(sheet, headers);
   return sheet;
 }
 
@@ -524,7 +535,7 @@ function ensureAssetCanBeDeleted_(assetId) {
   for (var i = 0; i < applications.length; i++) {
     const app = applications[i];
     if (app.status !== "待審核") continue;
-    if (app.assetIds.indexOf(assetId) >= 0) {
+    if (app.assetId === assetId) {
       throw new Error("此資產仍有待審核申請，請先完成審核後再刪除。");
     }
   }
@@ -533,7 +544,7 @@ function ensureAssetCanBeDeleted_(assetId) {
   for (var r = 0; r < records.length; r++) {
     const record = records[r];
     if (record.status !== "租借中" && record.status !== "待生效") continue;
-    if (record.assetIds.indexOf(assetId) >= 0) {
+    if (record.assetId === assetId) {
       throw new Error("此資產仍有待生效或租借中紀錄，請完成歸還後再刪除。");
     }
   }
@@ -586,13 +597,7 @@ function createAssetPauseRange_(body) {
   if (note.length > 60) {
     throw new Error("note 最多 60 字");
   }
-  const assets = readAssets_();
-  const target = assets.find(function (asset) {
-    return asset.id === assetId;
-  });
-  if (!target) {
-    throw new Error("找不到資產：" + assetId);
-  }
+  getAssetOrThrow_(assetId);
   ensurePauseRangeNoBorrowConflict_(assetId, startDate, endDate);
 
   const sheet = getAssetPauseSheet_();
@@ -833,8 +838,7 @@ function ensurePauseRangeNoBorrowConflict_(assetId, pauseStartDate, pauseEndDate
     const borrowedAt = normalizeDateText_(rows[i][RECORD_COL_BORROWED_AT]);
     const expectedReturnAt = normalizeDateText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]);
     if (!borrowedAt || !expectedReturnAt) continue;
-    const assetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
-    if (assetIds.indexOf(assetId) < 0) continue;
+    if (String(rows[i][RECORD_COL_ASSET_ID] || "").trim() !== assetId) continue;
     if (isDateRangeOverlapping_(borrowedAt, expectedReturnAt, pauseStartDate, pauseEndDate)) {
       throw new Error(
         "暫停出借時段與既有借用紀錄重疊：" +
@@ -979,8 +983,8 @@ function readBorrowApplications_() {
     const recordId = String(row[APP_COL_RECORD_ID] || "").trim();
     const reviewedBy = String(row[APP_COL_REVIEWED_BY] || "").trim();
     const reviewedAt = normalizeDateText_(row[APP_COL_REVIEWED_AT]);
-    const assetIds = parseStringArray_(row[APP_COL_ASSET_IDS]);
-    const item = resolveItemTypeAndName_(row[APP_COL_ITEM_TYPE], row[APP_COL_ITEM_NAME], assetIds);
+    const assetId = String(row[APP_COL_ASSET_ID] || "").trim();
+    const item = resolveItemTypeAndName_(row[APP_COL_ITEM_TYPE], row[APP_COL_ITEM_NAME], assetId);
 
     const app = {
       id: id,
@@ -991,7 +995,7 @@ function readBorrowApplications_() {
       studentEmail: String(row[5] || "").trim(),
       itemType: item.itemType,
       itemName: item.itemName,
-      assetIds: assetIds,
+      assetId: assetId,
       borrowedAt: normalizeTemporalText_(row[APP_COL_BORROWED_AT]),
       expectedReturnAt: normalizeTemporalText_(row[APP_COL_EXPECTED_RETURN_AT]),
       status: VALID_APPLICATION_STATUS.indexOf(status) >= 0 ? status : "待審核",
@@ -1036,8 +1040,8 @@ function readBorrowRecords_() {
 
     const returnedAt = normalizeDateText_(row[RECORD_COL_RETURNED_AT]);
     const returnRequestStatus = String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim();
-    const assetIds = parseStringArray_(row[RECORD_COL_ASSET_IDS]);
-    const item = resolveItemTypeAndName_(row[RECORD_COL_ITEM_TYPE], row[RECORD_COL_ITEM_NAME], assetIds);
+    const assetId = String(row[RECORD_COL_ASSET_ID] || "").trim();
+    const item = resolveItemTypeAndName_(row[RECORD_COL_ITEM_TYPE], row[RECORD_COL_ITEM_NAME], assetId);
     const record = {
       id: id,
       studentId: String(row[1] || "").trim(),
@@ -1046,7 +1050,7 @@ function readBorrowRecords_() {
       studentEmail: String(row[4] || "").trim(),
       itemType: item.itemType,
       itemName: item.itemName,
-      assetIds: assetIds,
+      assetId: assetId,
       borrowedAt: normalizeTemporalText_(row[RECORD_COL_BORROWED_AT]),
       expectedReturnAt: normalizeTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT]),
       status: status,
@@ -1076,15 +1080,14 @@ function createBorrowApplication_(body) {
   const borrowerGroup = String((body && body.borrowerGroup) || "").trim();
   const mentorName = String((body && body.mentorName) || "").trim();
   const activityName = String((body && body.activityName) || "").trim();
-  const assetIds = normalizeIdArray_(body && body.assetIds, "assetIds");
+  const assetId = requireField_(body && body.assetId, "assetId");
   const recordId = String((body && body.recordId) || "").trim();
-  const assetTypeMap = getAssetTypeMap_();
-  const primaryAssetType = assetTypeMap[assetIds[0]];
+  const assetType = getAssetTypeMap_()[assetId];
   // itemType 以資產表為準；找不到資產時才採用前端傳入值（或舊格式前綴）
   const item = resolveItemTypeAndName_(
-    normalizeItemType_(primaryAssetType) || (body && body.itemType),
+    normalizeItemType_(assetType) || (body && body.itemType),
     rawItemName,
-    assetIds
+    assetId
   );
   const itemType = item.itemType;
   const itemName = item.itemName;
@@ -1103,9 +1106,9 @@ function createBorrowApplication_(body) {
     if (!activityName) {
       throw new Error("activityName 為必填");
     }
-    if (primaryAssetType === "venue") {
+    if (assetType === "venue") {
       const booking = validateVenueBooking_(
-        assetIds[0],
+        assetId,
         body && body.borrowedAt,
         body && body.expectedReturnAt
       );
@@ -1116,7 +1119,7 @@ function createBorrowApplication_(body) {
       expectedReturnAt = requireDateText_(body && body.expectedReturnAt, "expectedReturnAt");
       ensureDateRange_(borrowedAt, expectedReturnAt);
       ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
-      ensureAssetsAvailableForPeriod_(assetIds, borrowedAt, expectedReturnAt);
+      ensureAssetAvailableForPeriod_(assetId, borrowedAt, expectedReturnAt);
     }
     ensureBorrowLeadTime_(borrowedAt);
   } else {
@@ -1142,7 +1145,7 @@ function createBorrowApplication_(body) {
     studentEmail,
     itemName,
     itemType,
-    JSON.stringify(assetIds),
+    assetId,
     borrowedAt,
     expectedReturnAt,
     status,
@@ -1188,6 +1191,7 @@ function listAvailableAssetsByStartDate_(borrowedAt) {
 
   const assets = readAssets_();
   const blockedRangeMap = getBlockedRangesByAssetId_();
+  const pauseRangesByAssetId = getPauseRangesByAssetId_();
   const holidaySet = getHolidaySet_();
   const venues = [];
   const equipments = [];
@@ -1197,8 +1201,9 @@ function listAvailableAssetsByStartDate_(borrowedAt) {
     if (asset.status === "停用中") continue;
 
     if (asset.type === "venue") {
-      const context = getVenueBookingContext_(asset.id);
-      if (venueHasFreeHourOnDate_(borrowedAt, context, holidaySet)) {
+      const intervals = getVenueBookingContext_(asset.id, borrowedAt);
+      const pauseRanges = pauseRangesByAssetId[asset.id] || [];
+      if (venueHasFreeHourOnDate_(borrowedAt, intervals, pauseRanges, holidaySet)) {
         venues.push(asset);
       }
       continue;
@@ -1220,26 +1225,23 @@ function listAvailableAssetsByStartDate_(borrowedAt) {
   return { venues: venues, equipments: equipments };
 }
 
-function ensureAssetsAvailableForPeriod_(assetIds, borrowedAt, expectedReturnAt) {
+function getAssetOrThrow_(assetId) {
   const assets = readAssets_();
-  const assetMap = {};
   for (var i = 0; i < assets.length; i++) {
-    assetMap[assets[i].id] = assets[i];
+    if (assets[i].id === assetId) return assets[i];
   }
+  throw new Error("找不到資產：" + assetId);
+}
 
+function ensureAssetAvailableForPeriod_(assetId, borrowedAt, expectedReturnAt) {
+  const asset = getAssetOrThrow_(assetId);
   ensurePeriodNotGloballyClosed_(borrowedAt, expectedReturnAt);
-  const occupied = getOccupiedAssetIdSetForPeriod_(borrowedAt, expectedReturnAt);
 
-  for (var a = 0; a < assetIds.length; a++) {
-    const assetId = String(assetIds[a] || "").trim();
-    const asset = assetMap[assetId];
-    if (!asset) throw new Error("找不到資產：" + assetId);
-    if (asset.status === "停用中") {
-      throw new Error("資產停用中，暫不可借：" + asset.name);
-    }
-    if (occupied[assetId]) {
-      throw new Error("資產時段衝突，請改選其他項目：" + asset.name);
-    }
+  if (asset.status === "停用中") {
+    throw new Error("資產停用中，暫不可借：" + asset.name);
+  }
+  if (getOccupiedAssetIdSetForPeriod_(borrowedAt, expectedReturnAt)[assetId]) {
+    throw new Error("資產時段衝突，請改選其他項目：" + asset.name);
   }
 }
 
@@ -1265,11 +1267,10 @@ function getOccupiedAssetIdSetForPeriod_(targetBorrowedAt, targetExpectedReturnA
     const effectiveEndAt = getEffectiveBlockedRangeEndDate_(status, expectedReturnAt, todayText);
 
     if (isDateRangeOverlapping_(borrowedAt, effectiveEndAt, targetBorrowedAt, targetExpectedReturnAt)) {
-      const ids = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
-      for (var a = 0; a < ids.length; a++) {
-        // 空間以小時計，衝突由 venue 專用流程處理，此處僅處理設備
-        if (assetTypeMap[ids[a]] === "venue") continue;
-        occupied[ids[a]] = true;
+      const id = String(rows[i][RECORD_COL_ASSET_ID] || "").trim();
+      // 空間以小時計，衝突由 venue 專用流程處理，此處僅處理設備
+      if (id && assetTypeMap[id] !== "venue") {
+        occupied[id] = true;
       }
     }
   }
@@ -1286,24 +1287,21 @@ function listAssetAvailableDates_(assetId, fromDate, windowDays) {
     throw new Error("windowDays 需介於 1 到 90");
   }
 
-  const assets = readAssets_();
-  const targetAsset = assets.find(function (asset) {
-    return asset.id === assetId;
-  });
-  if (!targetAsset) throw new Error("找不到資產：" + assetId);
+  const targetAsset = getAssetOrThrow_(assetId);
   if (targetAsset.status === "停用中") {
     return { assetId: assetId, fromDate: fromDate, dates: [] };
   }
 
   const globalPauseRanges = getGlobalPauseRanges_();
   if (targetAsset.type === "venue") {
-    const venueContext = getVenueBookingContext_(assetId);
+    const intervalsByDate = getVenueBookingContext_(assetId);
+    const pauseRanges = getPauseRangesByAssetId_()[assetId] || [];
     const venueHolidaySet = getHolidaySet_();
     const venueDates = [];
     for (var vd = 0; vd < windowDays; vd++) {
       const venueDate = addDaysText_(fromDate, vd);
       if (isGloballyClosedDate_(venueDate, globalPauseRanges)) continue;
-      if (venueHasFreeHourOnDate_(venueDate, venueContext, venueHolidaySet)) {
+      if (venueHasFreeHourOnDate_(venueDate, intervalsByDate[venueDate] || [], pauseRanges, venueHolidaySet)) {
         venueDates.push(venueDate);
       }
     }
@@ -1332,11 +1330,7 @@ function listAssetAvailableDates_(assetId, fromDate, windowDays) {
 function listAvailableReturnDates_(assetId, borrowedAt) {
   ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
 
-  const assets = readAssets_();
-  const targetAsset = assets.find(function (asset) {
-    return asset.id === assetId;
-  });
-  if (!targetAsset) throw new Error("找不到資產：" + assetId);
+  const targetAsset = getAssetOrThrow_(assetId);
   if (targetAsset.status === "停用中") {
     return { assetId: assetId, borrowedAt: borrowedAt, dates: [] };
   }
@@ -1412,8 +1406,7 @@ function getAssetBlockedRanges_(assetId, blockedRangeMap) {
     if (!borrowedAt || !expectedReturnAt) continue;
     const effectiveEndAt = getEffectiveBlockedRangeEndDate_(status, expectedReturnAt, todayText);
 
-    const assetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
-    if (assetIds.indexOf(assetId) >= 0) {
+    if (String(rows[i][RECORD_COL_ASSET_ID] || "").trim() === assetId) {
       ranges.push({ start: borrowedAt, end: effectiveEndAt });
     }
   }
@@ -1444,15 +1437,12 @@ function getBlockedRangesByAssetId_() {
       if (!borrowedAt || !expectedReturnAt) continue;
       const effectiveEndAt = getEffectiveBlockedRangeEndDate_(status, expectedReturnAt, todayText);
 
-      const assetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
-      for (var a = 0; a < assetIds.length; a++) {
-        const currentAssetId = assetIds[a];
-        if (assetTypeMap[currentAssetId] === "venue") continue;
-        if (!blockedRangeMap[currentAssetId]) {
-          blockedRangeMap[currentAssetId] = [];
-        }
-        blockedRangeMap[currentAssetId].push({ start: borrowedAt, end: effectiveEndAt });
+      const currentAssetId = String(rows[i][RECORD_COL_ASSET_ID] || "").trim();
+      if (!currentAssetId || assetTypeMap[currentAssetId] === "venue") continue;
+      if (!blockedRangeMap[currentAssetId]) {
+        blockedRangeMap[currentAssetId] = [];
       }
+      blockedRangeMap[currentAssetId].push({ start: borrowedAt, end: effectiveEndAt });
     }
   }
 
@@ -1639,7 +1629,7 @@ function isBlockedByRanges_(startDate, endDate, ranges) {
   return false;
 }
 
-function getVenueBookingContext_(assetId, excludeRecordId) {
+function getVenueBookingContext_(assetId, dateText, excludeRecordId) {
   const intervalsByDate = {};
   const sheet = getBorrowRecordsSheet_();
   const lastRow = sheet.getLastRow();
@@ -1651,21 +1641,24 @@ function getVenueBookingContext_(assetId, excludeRecordId) {
 
       const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
       if (status !== "租借中" && status !== "待生效") continue;
-      const ids = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
-      if (ids.indexOf(assetId) < 0) continue;
-      const start = normalizeTemporalText_(rows[i][RECORD_COL_BORROWED_AT]);
-      const end = normalizeTemporalText_(rows[i][RECORD_COL_EXPECTED_RETURN_AT]);
-      if (!isVenueTemporal_(start) || !isVenueTemporal_(end)) continue;
+      if (String(rows[i][RECORD_COL_ITEM_TYPE] || "").trim() !== "venue") continue;
+      if (String(rows[i][RECORD_COL_ASSET_ID] || "").trim() !== assetId) continue;
+
+      const start = rows[i][RECORD_COL_BORROWED_AT];
+      const end = rows[i][RECORD_COL_EXPECTED_RETURN_AT];
       const date = getDatePart_(start);
+      if (dateText && date !== dateText) continue;
+      if (!isVenueTemporal_(start) || !isVenueTemporal_(end)) continue;
+
       if (!intervalsByDate[date]) intervalsByDate[date] = [];
       intervalsByDate[date].push({
-        startHour: getHourFromDateTime_(start),
-        endHour: getHourFromDateTime_(end),
+        start: getHourFromDateTime_(start),
+        end: getHourFromDateTime_(end),
       });
     }
   }
-  const pauseMap = getPauseRangesByAssetId_();
-  return { intervalsByDate: intervalsByDate, pauseRanges: pauseMap[assetId] || [] };
+  if (dateText) return intervalsByDate[dateText] || [];
+  return intervalsByDate;
 }
 
 function isDateWithinAnyRange_(dateText, ranges) {
@@ -1680,7 +1673,7 @@ function computeVenueFreeStartHours_(intervals, openStart, openEnd) {
   for (var h = openStart; h < openEnd; h++) {
     var blocked = false;
     for (var k = 0; k < intervals.length; k++) {
-      if (h >= intervals[k].startHour && h < intervals[k].endHour) {
+      if (h >= intervals[k].start && h < intervals[k].end) {
         blocked = true;
         break;
       }
@@ -1690,37 +1683,28 @@ function computeVenueFreeStartHours_(intervals, openStart, openEnd) {
   return free;
 }
 
-function venueHasFreeHourOnDate_(dateText, context, holidaySet) {
+function venueHasFreeHourOnDate_(dateText, intervals, pauseRanges, holidaySet) {
   if (dateText < getTodayText_()) return false;
   if (isGloballyClosedDate_(dateText)) return false;
-  if (isDateWithinAnyRange_(dateText, context.pauseRanges)) return false;
+  if (isDateWithinAnyRange_(dateText, pauseRanges)) return false;
   const open = getVenueOpenHoursForDate_(dateText, holidaySet);
-  const intervals = context.intervalsByDate[dateText] || [];
-  return computeVenueFreeStartHours_(intervals, open.openStart, open.openEnd).length > 0;
+  return computeVenueFreeStartHours_(intervals || [], open.openStart, open.openEnd).length > 0;
 }
 
 function listVenueOccupiedSlots_(assetId, dateText) {
   const date = requireDateText_(dateText, "date");
-  const assets = readAssets_();
-  const target = assets.find(function (asset) {
-    return asset.id === assetId;
-  });
-  if (!target) throw new Error("找不到資產：" + assetId);
+  const target = getAssetOrThrow_(assetId);
   if (target.type !== "venue") throw new Error("此資產非空間，無法查詢小時可借時段");
 
-  const context = getVenueBookingContext_(assetId);
-  const intervals = context.intervalsByDate[date] || [];
-  const occupiedIntervals = intervals
-    .map(function (iv) {
-      return { start: formatHour_(iv.startHour), end: formatHour_(iv.endHour) };
-    })
-    .sort(function (a, b) {
-      return a.start < b.start ? -1 : a.start > b.start ? 1 : 0;
-    });
-  return { occupied: occupiedIntervals };
+  const intervals = getVenueBookingContext_(assetId, date);
+  intervals.sort(function (a, b) {
+    return a.start - b.start;
+  });
+  return { occupied: intervals };
 }
 
-function validateVenueBooking_(assetId, startRaw, endRaw) {
+// excludeRecordId：修改既有紀錄應歸還時間時傳入，略過「需為今天或之後」並排除自身占用
+function validateVenueBooking_(assetId, startRaw, endRaw, excludeRecordId) {
   const start = requireDateTimeText_(startRaw, "空間借用開始時間");
   const end = requireDateTimeText_(endRaw, "空間借用結束時間");
 
@@ -1731,7 +1715,7 @@ function validateVenueBooking_(assetId, startRaw, endRaw) {
   if (getMinuteFromDateTime_(start) !== 0 || getMinuteFromDateTime_(end) !== 0) {
     throw new Error("空間借用需以整點為單位。");
   }
-  if (date < getTodayText_()) {
+  if (!excludeRecordId && date < getTodayText_()) {
     throw new Error("借用日期需為今天或之後。");
   }
   ensurePeriodNotGloballyClosed_(date, date);
@@ -1750,80 +1734,30 @@ function validateVenueBooking_(assetId, startRaw, endRaw) {
     );
   }
 
-  const assets = readAssets_();
-  const target = assets.find(function (asset) {
-    return asset.id === assetId;
-  });
-  if (!target) throw new Error("找不到資產：" + assetId);
+  const target = getAssetOrThrow_(assetId);
   if (target.status === "停用中") {
     throw new Error("資產停用中，暫不可借：" + target.name);
   }
 
-  const context = getVenueBookingContext_(assetId);
-  if (isDateWithinAnyRange_(date, context.pauseRanges)) {
+  const pauseRanges = getPauseRangesByAssetId_()[assetId] || [];
+  if (isDateWithinAnyRange_(date, pauseRanges)) {
     throw new Error("該空間此日暫停出借，請改選其他日期。");
   }
-  const intervals = context.intervalsByDate[date] || [];
+  const intervals = getVenueBookingContext_(assetId, date, excludeRecordId);
   for (var i = 0; i < intervals.length; i++) {
-    if (startHour < intervals[i].endHour && intervals[i].startHour < endHour) {
-      throw new Error("該時段已被借用，請改選其他時段。");
+    if (startHour < intervals[i].end && intervals[i].start < endHour) {
+      throw new Error(
+        excludeRecordId
+          ? "該時段與其他借用衝突，請改選其他結束時間。"
+          : "該時段已被借用，請改選其他時段。"
+      );
     }
   }
 
   return { start: start, end: end };
 }
 
-function validateVenueBookingExcludingRecord_(assetId, startRaw, endRaw, excludeRecordId) {
-  const start = requireDateTimeText_(startRaw, "空間借用開始時間");
-  const end = requireDateTimeText_(endRaw, "空間借用結束時間");
-
-  const date = getDatePart_(start);
-  if (getDatePart_(end) !== date) {
-    throw new Error("空間借用需於同一天內，不可跨日。");
-  }
-  if (getMinuteFromDateTime_(start) !== 0 || getMinuteFromDateTime_(end) !== 0) {
-    throw new Error("空間借用需以整點為單位。");
-  }
-  ensurePeriodNotGloballyClosed_(date, date);
-
-  const startHour = getHourFromDateTime_(start);
-  const endHour = getHourFromDateTime_(end);
-  if (startHour >= endHour) {
-    throw new Error("結束時間需晚於開始時間。");
-  }
-
-  const holidaySet = getHolidaySet_();
-  const open = getVenueOpenHoursForDate_(date, holidaySet);
-  if (startHour < open.openStart || endHour > open.openEnd) {
-    throw new Error(
-      "該日可借時段為 " + formatHour_(open.openStart) + "-" + formatHour_(open.openEnd) + "。"
-    );
-  }
-
-  const assets = readAssets_();
-  const target = assets.find(function (asset) {
-    return asset.id === assetId;
-  });
-  if (!target) throw new Error("找不到資產：" + assetId);
-  if (target.status === "停用中") {
-    throw new Error("資產停用中，暫不可借：" + target.name);
-  }
-
-  const context = getVenueBookingContext_(assetId, excludeRecordId);
-  if (isDateWithinAnyRange_(date, context.pauseRanges)) {
-    throw new Error("該空間此日暫停出借，請改選其他日期。");
-  }
-  const intervals = context.intervalsByDate[date] || [];
-  for (var i = 0; i < intervals.length; i++) {
-    if (startHour < intervals[i].endHour && intervals[i].startHour < endHour) {
-      throw new Error("該時段與其他借用衝突，請改選其他結束時間。");
-    }
-  }
-
-  return { start: start, end: end };
-}
-
-function findEquipmentPeriodConflict_(assetIds, borrowedAt, expectedReturnAt, excludeRecordId) {
+function findEquipmentPeriodConflict_(assetId, borrowedAt, expectedReturnAt, excludeRecordId) {
   const sheet = getBorrowRecordsSheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
@@ -1844,19 +1778,15 @@ function findEquipmentPeriodConflict_(assetIds, borrowedAt, expectedReturnAt, ex
       continue;
     }
 
-    const otherAssetIds = parseStringArray_(rows[i][RECORD_COL_ASSET_IDS]);
-    for (var a = 0; a < assetIds.length; a++) {
-      if (otherAssetIds.indexOf(assetIds[a]) >= 0) {
-        return {
-          recordId: recordId,
-          studentId: String(rows[i][1] || "").trim(),
-          studentName: String(rows[i][2] || "").trim(),
-          itemName: parseLegacyItemName_(rows[i][RECORD_COL_ITEM_NAME]).name,
-          borrowedAt: otherBorrowedAt,
-          expectedReturnAt: otherExpectedReturnAt,
-        };
-      }
-    }
+    if (String(rows[i][RECORD_COL_ASSET_ID] || "").trim() !== assetId) continue;
+    return {
+      recordId: recordId,
+      studentId: String(rows[i][1] || "").trim(),
+      studentName: String(rows[i][2] || "").trim(),
+      itemName: parseLegacyItemName_(rows[i][RECORD_COL_ITEM_NAME]).name,
+      borrowedAt: otherBorrowedAt,
+      expectedReturnAt: otherExpectedReturnAt,
+    };
   }
   return null;
 }
@@ -1877,37 +1807,22 @@ function formatBorrowPeriodConflictMessage_(conflict) {
   );
 }
 
-function ensureAssetsAvailableForPeriodExcludingRecord_(assetIds, borrowedAt, expectedReturnAt, excludeRecordId) {
-  const assets = readAssets_();
-  const assetMap = {};
-  for (var i = 0; i < assets.length; i++) {
-    assetMap[assets[i].id] = assets[i];
-  }
-
+function ensureAssetAvailableForPeriodExcludingRecord_(assetId, borrowedAt, expectedReturnAt, excludeRecordId) {
+  const asset = getAssetOrThrow_(assetId);
   ensurePeriodNotGloballyClosed_(borrowedAt, expectedReturnAt);
 
-  const conflict = findEquipmentPeriodConflict_(assetIds, borrowedAt, expectedReturnAt, excludeRecordId);
+  const conflict = findEquipmentPeriodConflict_(assetId, borrowedAt, expectedReturnAt, excludeRecordId);
   if (conflict) {
     throw new Error(formatBorrowPeriodConflictMessage_(conflict));
   }
 
-  const pauseRangesByAssetId = getPauseRangesByAssetId_();
-  for (var a = 0; a < assetIds.length; a++) {
-    const assetId = String(assetIds[a] || "").trim();
-    const asset = assetMap[assetId];
-    if (!asset) throw new Error("找不到資產：" + assetId);
-    if (asset.status === "停用中") {
-      throw new Error("資產停用中，暫不可借：" + asset.name);
-    }
+  if (asset.status === "停用中") {
+    throw new Error("資產停用中，暫不可借：" + asset.name);
+  }
 
-    const pauseOnlyRanges = [];
-    const pauses = pauseRangesByAssetId[assetId] || [];
-    for (var p = 0; p < pauses.length; p++) {
-      pauseOnlyRanges.push({ start: pauses[p].start, end: pauses[p].end });
-    }
-    if (isBlockedByRanges_(borrowedAt, expectedReturnAt, pauseOnlyRanges)) {
-      throw new Error("借用期間與資產停用區間衝突：" + asset.name);
-    }
+  const pauseRanges = getPauseRangesByAssetId_()[assetId] || [];
+  if (isBlockedByRanges_(borrowedAt, expectedReturnAt, pauseRanges)) {
+    throw new Error("借用期間與資產停用區間衝突：" + asset.name);
   }
 }
 
@@ -1929,18 +1844,16 @@ function updateBorrowRecordExpectedReturnAt_(body) {
   }
 
   const borrowedAt = normalizeTemporalText_(row[RECORD_COL_BORROWED_AT]);
-  const assetIds = parseStringArray_(row[RECORD_COL_ASSET_IDS]);
-  if (!assetIds.length) {
+  const assetId = String(row[RECORD_COL_ASSET_ID] || "").trim();
+  if (!assetId) {
     throw new Error("紀錄缺少資產資訊");
   }
 
-  const assetTypeMap = getAssetTypeMap_();
-  const primaryType = assetTypeMap[assetIds[0]];
   var expectedReturnAt;
 
-  if (primaryType === "venue") {
+  if (getAssetTypeMap_()[assetId] === "venue") {
     expectedReturnAt = requireDateTimeText_(rawExpectedReturnAt, "expectedReturnAt");
-    validateVenueBookingExcludingRecord_(assetIds[0], borrowedAt, expectedReturnAt, recordId);
+    validateVenueBooking_(assetId, borrowedAt, expectedReturnAt, recordId);
   } else {
     expectedReturnAt = requireDateText_(rawExpectedReturnAt, "expectedReturnAt");
     const borrowedDate = getDatePart_(borrowedAt);
@@ -1950,7 +1863,7 @@ function updateBorrowRecordExpectedReturnAt_(body) {
     if (!isWorkingDayText_(expectedReturnAt, getHolidaySet_())) {
       throw new Error("應歸還日期須為工作天（週末與國定假日不可歸還設備）");
     }
-    ensureAssetsAvailableForPeriodExcludingRecord_(assetIds, borrowedDate, expectedReturnAt, recordId);
+    ensureAssetAvailableForPeriodExcludingRecord_(assetId, borrowedDate, expectedReturnAt, recordId);
   }
 
   row[RECORD_COL_EXPECTED_RETURN_AT] = expectedReturnAt;
@@ -1995,7 +1908,7 @@ function reviewBorrowApplication_(body) {
   const reviewedItem = resolveItemTypeAndName_(
     row[APP_COL_ITEM_TYPE],
     row[APP_COL_ITEM_NAME],
-    parseStringArray_(row[APP_COL_ASSET_IDS])
+    String(row[APP_COL_ASSET_ID] || "").trim()
   );
   row[APP_COL_ITEM_NAME] = reviewedItem.itemName;
   row[APP_COL_ITEM_TYPE] = reviewedItem.itemType;
@@ -2036,22 +1949,20 @@ function reviewBorrowApplication_(body) {
 }
 
 function ensureApplicationStillBookable_(appRow) {
-  const assetIds = parseStringArray_(appRow[APP_COL_ASSET_IDS]);
-  if (assetIds.length === 0) {
+  const assetId = String(appRow[APP_COL_ASSET_ID] || "").trim();
+  if (!assetId) {
     throw new Error("申請缺少借用項目，無法核准。");
   }
   const borrowedAt = normalizeTemporalText_(appRow[APP_COL_BORROWED_AT]);
   const expectedReturnAt = normalizeTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT]);
-  const assetTypeMap = getAssetTypeMap_();
-  const primaryAssetType = assetTypeMap[assetIds[0]];
 
   // 重新確認所選借用區間是否仍與既有紀錄重疊（避免多筆相同區間申請同時核准造成衝突）。
-  if (primaryAssetType === "venue") {
-    validateVenueBooking_(assetIds[0], borrowedAt, expectedReturnAt);
+  if (getAssetTypeMap_()[assetId] === "venue") {
+    validateVenueBooking_(assetId, borrowedAt, expectedReturnAt);
     return;
   }
-  ensureAssetsAvailableForPeriod_(
-    assetIds,
+  ensureAssetAvailableForPeriod_(
+    assetId,
     getDatePart_(borrowedAt),
     getDatePart_(expectedReturnAt)
   );
@@ -2062,10 +1973,11 @@ function createBorrowRecordFromApplicationRow_(appRow) {
   const recordId = "rec-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
   const borrowedAt = normalizeTemporalText_(appRow[APP_COL_BORROWED_AT]);
   const expectedReturnAt = normalizeTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT]);
+  const assetId = String(appRow[APP_COL_ASSET_ID] || "").trim();
   const item = resolveItemTypeAndName_(
     appRow[APP_COL_ITEM_TYPE],
     appRow[APP_COL_ITEM_NAME],
-    parseStringArray_(appRow[APP_COL_ASSET_IDS])
+    assetId
   );
   recordSheet.appendRow([
     recordId,
@@ -2075,7 +1987,7 @@ function createBorrowRecordFromApplicationRow_(appRow) {
     String(appRow[5] || "").trim(),
     item.itemName,
     item.itemType,
-    String(appRow[APP_COL_ASSET_IDS] || "").trim(),
+    assetId,
     borrowedAt,
     expectedReturnAt,
     "",
@@ -2189,10 +2101,8 @@ function reconcileBorrowingState_() {
         nextStatus = "待生效";
       } else {
         nextStatus = "租借中";
-        const assetIds = parseStringArray_(row[RECORD_COL_ASSET_IDS]);
-        for (var a = 0; a < assetIds.length; a++) {
-          activeAssetIdSet[assetIds[a]] = true;
-        }
+        const activeAssetId = String(row[RECORD_COL_ASSET_ID] || "").trim();
+        if (activeAssetId) activeAssetIdSet[activeAssetId] = true;
       }
 
       if (nextStatus !== currentStatus) {
@@ -2265,33 +2175,6 @@ function getTodayText_() {
 
 function getNowDateTimeText_() {
   return Utilities.formatDate(new Date(), APP_TIME_ZONE, "yyyy-MM-dd HH:mm");
-}
-
-function updateAssetStatuses_(assetIds, nextStatus) {
-  if (VALID_STATUS.indexOf(nextStatus) === -1) {
-    throw new Error("資產狀態錯誤：" + nextStatus);
-  }
-  if (!assetIds || assetIds.length === 0) return;
-
-  const sheet = getAssetsSheet_();
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-
-  const numRows = lastRow - 1;
-  const rows = sheet.getRange(2, 1, numRows, ASSET_HEADERS.length).getValues();
-  const idSet = {};
-  for (var i = 0; i < assetIds.length; i++) {
-    idSet[String(assetIds[i] || "").trim()] = true;
-  }
-
-  for (var r = 0; r < rows.length; r++) {
-    const id = String(rows[r][0] || "").trim();
-    if (!id || !idSet[id]) continue;
-    rows[r][3] = nextStatus;
-  }
-
-  sheet.getRange(2, 1, numRows, ASSET_HEADERS.length).setValues(rows);
-  invalidateAssetsCache_();
 }
 
 function findRowById_(sheet, width, id) {
@@ -2554,11 +2437,11 @@ function parseLegacyItemName_(raw) {
 }
 
 // 以 itemType 欄位為主，缺少時依序退回：舊 itemName 前綴 → assets 表資產類型
-function resolveItemTypeAndName_(rawItemType, rawItemName, assetIds) {
+function resolveItemTypeAndName_(rawItemType, rawItemName, assetId) {
   const legacy = parseLegacyItemName_(rawItemName);
   let type = normalizeItemType_(rawItemType) || legacy.type;
-  if (!type && assetIds && assetIds.length) {
-    type = normalizeItemType_(getAssetTypeMap_()[assetIds[0]]);
+  if (!type && assetId) {
+    type = normalizeItemType_(getAssetTypeMap_()[assetId]);
   }
   return { itemType: type, itemName: legacy.name };
 }
@@ -2572,14 +2455,14 @@ function migrateItemNameTypeSplit() {
       BORROW_APPLICATION_HEADERS.length,
       APP_COL_ITEM_NAME,
       APP_COL_ITEM_TYPE,
-      APP_COL_ASSET_IDS
+      APP_COL_ASSET_ID
     ),
     records: migrateItemTypeColumnForSheet_(
       getBorrowRecordsSheet_(),
       BORROW_RECORD_HEADERS.length,
       RECORD_COL_ITEM_NAME,
       RECORD_COL_ITEM_TYPE,
-      RECORD_COL_ASSET_IDS
+      RECORD_COL_ASSET_ID
     ),
   };
   if (summary.applications > 0 || summary.records > 0) {
@@ -2644,7 +2527,7 @@ function ensureBorrowSheetColumnLayout_(sheet, desiredHeaders) {
   return true;
 }
 
-function migrateItemTypeColumnForSheet_(sheet, columnCount, nameCol, typeCol, assetIdsCol) {
+function migrateItemTypeColumnForSheet_(sheet, columnCount, nameCol, typeCol, assetIdCol) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return 0;
   const range = sheet.getRange(2, 1, lastRow - 1, columnCount);
@@ -2655,7 +2538,7 @@ function migrateItemTypeColumnForSheet_(sheet, columnCount, nameCol, typeCol, as
     const resolved = resolveItemTypeAndName_(
       rows[i][typeCol],
       rows[i][nameCol],
-      parseStringArray_(rows[i][assetIdsCol])
+      String(rows[i][assetIdCol] || "").trim()
     );
     const currentName = String(rows[i][nameCol] || "").trim();
     const currentType = String(rows[i][typeCol] || "").trim();
@@ -2696,40 +2579,6 @@ function formatPhoneForSheet_(raw) {
   return phone ? "'" + phone : "";
 }
 
-function normalizeIdArray_(value, fieldName) {
-  if (!Array.isArray(value)) throw new Error(fieldName + " 必須為陣列");
-  const normalized = value
-    .map(function (id) {
-      return String(id || "").trim();
-    })
-    .filter(function (id) {
-      return Boolean(id);
-    });
-  if (normalized.length === 0) throw new Error(fieldName + " 至少需要一筆");
-  return normalized;
-}
-
-function parseStringArray_(raw) {
-  if (!raw) return [];
-  const text = String(raw).trim();
-  if (!text) return [];
-  try {
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed)
-      ? parsed.map(function (item) {
-          return String(item || "").trim();
-        }).filter(Boolean)
-      : [];
-  } catch (_error) {
-    return text
-      .split(",")
-      .map(function (item) {
-        return String(item || "").trim();
-      })
-      .filter(Boolean);
-  }
-}
-
 function generateApplicationId_(type) {
   const prefix = type === "借用申請" ? "app" : "ret";
   return prefix + "-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
@@ -2751,8 +2600,8 @@ function setupRentalSheets() {
   getBorrowRecordsSheet_();
   getHolidaysSheet_();
   getGlobalPauseSheet_();
-  getStudentUnlocksSheet_();
-  Logger.log("borrow_applications / borrow_records / holidays / global_pause_ranges / student_borrow_unlocks 分頁已就緒");
+  getStudentBlocksSheet_();
+  Logger.log("borrow_applications / borrow_records / holidays / global_pause_ranges / student_borrow_blocks 分頁已就緒");
 }
 
 function reconcileBorrowingStateJob() {

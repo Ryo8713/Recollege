@@ -7,7 +7,7 @@ import type {
     GlobalPauseRange,
     StaffAccountSummary,
     StudentBlock,
-    VenueAvailability,
+    VenueOccupiedSlots,
 } from "../types/rental";
 
 const API_BASE_URL = import.meta.env.VITE_SHEETS_API_URL as string | undefined;
@@ -239,8 +239,8 @@ export const sheetsApi = {
         });
     },
 
-    async fetchVenueOccupiedSlots(assetId: string, date: string): Promise<VenueAvailability> {
-        return request<VenueAvailability>("venue-occupied-slots", undefined, { assetId, date });
+    async fetchVenueOccupiedSlots(assetId: string, date: string): Promise<VenueOccupiedSlots> {
+        return request<VenueOccupiedSlots>("venue-occupied-slots", undefined, { assetId, date });
     },
 
     async createAssetPauseRange(payload: {

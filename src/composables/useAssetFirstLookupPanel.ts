@@ -41,7 +41,7 @@ interface UseAssetFirstLookupPanelParams {
 	lookupDates: Ref<string[]>;
 	lookupLoading: Ref<boolean>;
 	lookupError: Ref<string>;
-	fetchVenueOccupiedSlotsCached: (assetId: string, date: string) => Promise<VenueAvailability>;
+	fetchVenueAvailability: (assetId: string, date: string) => Promise<VenueAvailability>;
 }
 
 export function useAssetFirstLookupPanel(params: UseAssetFirstLookupPanelParams) {
@@ -55,7 +55,7 @@ export function useAssetFirstLookupPanel(params: UseAssetFirstLookupPanelParams)
 		lookupDates,
 		lookupLoading,
 		lookupError,
-		fetchVenueOccupiedSlotsCached,
+		fetchVenueAvailability,
 	} = params;
 
 	const selectedLookupVenueId = ref("");
@@ -79,7 +79,7 @@ export function useAssetFirstLookupPanel(params: UseAssetFirstLookupPanelParams)
 		selectedLookupVenueId,
 		lookupDates,
 		earliestBorrowDate,
-		fetchVenueOccupiedSlotsCached,
+		fetchVenueAvailability,
 	});
 
 	function onLookupVenueIdChange(value: string) {

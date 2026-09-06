@@ -27,7 +27,7 @@ interface UseBorrowSubmitParams {
 	availableReturnDates: Ref<string[]>;
 	availabilityLoading: Ref<boolean>;
 	clearAvailabilityCaches: () => void;
-	loadBlockedRanges: (force?: boolean) => Promise<boolean>;
+	blockedRangesReady: (force?: boolean) => Promise<boolean>;
 	resetVenueSlots: () => void;
 	earliestBorrowDate: ComputedRef<string>;
 	isVenueSelected: ComputedRef<boolean>;
@@ -55,7 +55,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 		availableReturnDates,
 		availabilityLoading,
 		clearAvailabilityCaches,
-		loadBlockedRanges,
+		blockedRangesReady,
 		resetVenueSlots,
 		earliestBorrowDate,
 		isVenueSelected,
@@ -206,12 +206,12 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 				activityName: form.activityName,
 				itemType: selectedAssetType.value,
 				itemName: buildItemName(),
-				assetIds: [selectedAssetId.value],
+				assetId: selectedAssetId.value,
 				borrowedAt: borrowedAtPayload,
 				expectedReturnAt: expectedReturnAtPayload,
 			});
 			clearAvailabilityCaches();
-			void loadBlockedRanges(true);
+			void blockedRangesReady(true);
 			selectedAssetId.value = "";
 			selectedAssetType.value = "";
 			availableReturnDates.value = [];

@@ -412,7 +412,7 @@
 	const matches = rentalStore.records.filter(
 		(record) =>
 		(record.status === "租借中" || record.status === "待生效") &&
-		record.assetIds.includes(assetId),
+		record.assetId === assetId,
 	);
 	if (matches.length === 0) return null;
 	return matches.sort((a, b) => {
