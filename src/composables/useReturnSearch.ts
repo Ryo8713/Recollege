@@ -10,7 +10,6 @@ interface SubmitFeedbackActions {
 interface UseReturnSearchOptions {
 	isSubmitting: Ref<boolean>;
 	onSubmitted: () => void;
-	syncDataVersion: () => Promise<void>;
 }
 
 export function useReturnSearch(submitFeedback: SubmitFeedbackActions, options: UseReturnSearchOptions) {
@@ -77,7 +76,6 @@ export function useReturnSearch(submitFeedback: SubmitFeedbackActions, options: 
 			selectedReturnIds.value = [];
 			returnSearchId.value = "";
 			submitFeedback.showSuccess("送出成功", `已送出 ${recordsToSubmit.length} 筆歸還申請。`);
-			void options.syncDataVersion();
 		} catch (e) {
 			const message = e instanceof Error ? e.message : "送出失敗，請稍後再試。";
 			submitFeedback.showError("送出失敗", message);

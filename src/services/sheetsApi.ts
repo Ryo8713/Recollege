@@ -1,3 +1,4 @@
+import { applyKnownDataVersion } from "../composables/dataVersionState";
 import type {
     Asset,
     AssetType,
@@ -11,6 +12,8 @@ import type {
 } from "../types/rental";
 
 const API_BASE_URL = import.meta.env.VITE_SHEETS_API_URL as string | undefined;
+
+type WithDataVersion<T> = T & { version?: string };
 
 interface ReviewBorrowApplicationPayload {
     applicationId: string;
@@ -95,9 +98,9 @@ async function request<T>(path: string, init?: RequestInit, query?: Record<strin
     }
 
     const text = await response.text();
-    let data: T & { error?: string };
+    let data: T & { error?: string; version?: string };
     try {
-        data = JSON.parse(text) as T & { error?: string };
+        data = JSON.parse(text) as T & { error?: string; version?: string };
     } catch {
         throw new Error("API 回傳非 JSON,請確認 VITE_SHEETS_API_URL 是否為正確的 /exec 部署網址");
     }
@@ -108,6 +111,12 @@ async function request<T>(path: string, init?: RequestInit, query?: Record<strin
 
     if (!response.ok) {
         throw new Error(`API ${response.status}: ${path}`);
+    }
+
+    // Align local snapshot from write responses only.
+    // GET data-version must not apply here or poll comparison always sees equality.
+    if (method !== "GET" && method !== "HEAD" && data && typeof data === "object" && "version" in data) {
+        applyKnownDataVersion(data.version);
     }
 
     return data as T;
@@ -146,14 +155,14 @@ export const sheetsApi = {
         operatorAccount: string;
         date: string;
         note?: string;
-    }): Promise<{ ok: boolean; date: string; note: string; createdAt: string; createdBy: string }> {
+    }): Promise<WithDataVersion<{ ok: boolean; date: string; note: string; createdAt: string; createdBy: string }>> {
         return request("holidays", {
             method: "POST",
             body: JSON.stringify(payload),
         });
     },
 
-    async deleteHoliday(payload: { operatorAccount: string; date: string }): Promise<{ ok: boolean; date: string }> {
+    async deleteHoliday(payload: { operatorAccount: string; date: string }): Promise<WithDataVersion<{ ok: boolean; date: string }>> {
         return request("holiday-deletes", {
             method: "POST",
             body: JSON.stringify(payload),
@@ -169,14 +178,14 @@ export const sheetsApi = {
         startDate: string;
         endDate: string;
         note?: string;
-    }): Promise<GlobalPauseRange> {
-        return request<GlobalPauseRange>("global-pauses", {
+    }): Promise<WithDataVersion<GlobalPauseRange>> {
+        return request<WithDataVersion<GlobalPauseRange>>("global-pauses", {
             method: "POST",
             body: JSON.stringify(payload),
         });
     },
 
-    async deleteGlobalPauseRange(payload: { operatorAccount: string; id: string }): Promise<{ ok: boolean; id: string }> {
+    async deleteGlobalPauseRange(payload: { operatorAccount: string; id: string }): Promise<WithDataVersion<{ ok: boolean; id: string }>> {
         return request("global-pause-deletes", {
             method: "POST",
             body: JSON.stringify(payload),
@@ -191,7 +200,7 @@ export const sheetsApi = {
         operatorAccount: string;
         studentId: string;
         note?: string;
-    }): Promise<StudentBlock & { ok: boolean; alreadyBlocked?: boolean }> {
+    }): Promise<WithDataVersion<StudentBlock & { ok: boolean; alreadyBlocked?: boolean }>> {
         return request("student-blocks", {
             method: "POST",
             body: JSON.stringify(payload),
@@ -201,7 +210,7 @@ export const sheetsApi = {
     async deleteStudentBlock(payload: {
         operatorAccount: string;
         studentId: string;
-    }): Promise<{ ok: boolean; studentId: string }> {
+    }): Promise<WithDataVersion<{ ok: boolean; studentId: string }>> {
         return request("student-block-deletes", {
             method: "POST",
             body: JSON.stringify(payload),
@@ -217,8 +226,8 @@ export const sheetsApi = {
         startDate: string;
         endDate: string;
         note?: string;
-    }): Promise<AssetPauseRange> {
-        return request<AssetPauseRange>("asset-pauses", {
+    }): Promise<WithDataVersion<AssetPauseRange>> {
+        return request<WithDataVersion<AssetPauseRange>>("asset-pauses", {
             method: "POST",
             body: JSON.stringify(payload),
         });
@@ -232,15 +241,15 @@ export const sheetsApi = {
         return request<StaffAccountSummary[]>("staff-accounts");
     },
 
-    async createAsset(payload: { name: string; type: AssetType }): Promise<{ assetId: string }> {
-        return request<{ assetId: string }>("assets", {
+    async createAsset(payload: { name: string; type: AssetType }): Promise<WithDataVersion<{ assetId: string }>> {
+        return request<WithDataVersion<{ assetId: string }>>("assets", {
             method: "POST",
             body: JSON.stringify(payload),
         });
     },
 
-    async deleteAsset(payload: { operatorAccount: string; assetId: string }): Promise<{ ok: boolean; assetId: string; name: string }> {
-        return request<{ ok: boolean; assetId: string; name: string }>("asset-deletes", {
+    async deleteAsset(payload: { operatorAccount: string; assetId: string }): Promise<WithDataVersion<{ ok: boolean; assetId: string; name: string }>> {
+        return request<WithDataVersion<{ ok: boolean; assetId: string; name: string }>>("asset-deletes", {
             method: "POST",
             body: JSON.stringify(payload),
         });
@@ -267,8 +276,8 @@ export const sheetsApi = {
 
     async createBorrowApplication(
         payload: Omit<BorrowApplication, "id" | "createdAt" | "status" | "reviewedBy" | "reviewedAt" | "rejectionReason">,
-    ): Promise<{ ok: boolean; applicationId: string }> {
-        return request<{ ok: boolean; applicationId: string }>("borrow-applications", {
+    ): Promise<WithDataVersion<{ ok: boolean; applicationId: string }>> {
+        return request<WithDataVersion<{ ok: boolean; applicationId: string }>>("borrow-applications", {
             method: "POST",
             body: JSON.stringify(payload),
         });
@@ -276,8 +285,8 @@ export const sheetsApi = {
 
     async reviewBorrowApplication(
         payload: ReviewBorrowApplicationPayload,
-    ): Promise<{ ok: boolean; applicationId: string; status: string; recordId?: string }> {
-        return request<{ ok: boolean; applicationId: string; status: string; recordId?: string }>(
+    ): Promise<WithDataVersion<{ ok: boolean; applicationId: string; status: string; recordId?: string }>> {
+        return request<WithDataVersion<{ ok: boolean; applicationId: string; status: string; recordId?: string }>>(
             "borrow-application-reviews",
             {
                 method: "POST",
@@ -290,7 +299,7 @@ export const sheetsApi = {
         operatorAccount: string;
         recordId: string;
         expectedReturnAt: string;
-    }): Promise<{ ok: boolean; recordId: string; expectedReturnAt: string }> {
+    }): Promise<WithDataVersion<{ ok: boolean; recordId: string; expectedReturnAt: string }>> {
         return request("borrow-record-expected-return-updates", {
             method: "POST",
             body: JSON.stringify(payload),

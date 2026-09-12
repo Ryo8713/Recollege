@@ -8,7 +8,7 @@ const router = createRouter({
     routes: [
         {
         path: "/",
-        name: "register",
+        name: "student",
         component: StudentView,
         meta: { public: true },
         },
@@ -26,7 +26,7 @@ router.beforeEach((to) => {
 
   if (to.meta.requiresStaff && !authStore.isStaffLoggedIn) {
     authStore.openStaffLoginModal();
-    return { name: "register" };
+    return { name: "student" };
   }
 
   return true;

@@ -19,7 +19,6 @@ interface UseBorrowSubmitParams {
 	rentalStore: ReturnType<typeof useRentalStore>;
 	assets: Ref<Asset[]>;
 	submitFeedback: SubmitFeedbackActions;
-	syncDataVersion: () => Promise<void>;
 	holidayDates: Ref<Set<string>>;
 	isStudentBorrowBlocked: ComputedRef<boolean>;
 	selectedAssetId: Ref<string>;
@@ -47,7 +46,6 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 		rentalStore,
 		assets,
 		submitFeedback,
-		syncDataVersion,
 		holidayDates,
 		isStudentBorrowBlocked,
 		selectedAssetId,
@@ -218,7 +216,6 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 			resetVenueSlots();
 			resetBorrowForm();
 			submitFeedback.showSuccess("送出成功", "借用申請已送出。");
-			void syncDataVersion();
 		} catch (e) {
 			borrowError.value = e instanceof Error ? e.message : "送出失敗，請稍後再試。";
 			submitFeedback.showError("送出失敗", borrowError.value);

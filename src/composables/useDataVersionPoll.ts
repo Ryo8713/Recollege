@@ -1,5 +1,6 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { sheetsApi } from "../services/sheetsApi";
+import { applyKnownDataVersion, getLatestDataVersionRef } from "./dataVersionState";
 
 export function useDataVersionPoll(options: {
 	onRefresh: () => Promise<void>;
@@ -7,17 +8,13 @@ export function useDataVersionPoll(options: {
 }) {
 	const hasRemoteUpdate = ref(false);
 	const isRefreshingLatestData = ref(false);
-	const lastKnownDataVersion = ref("");
-	const latestRemoteDataVersion = ref("");
-	const dismissedRemoteDataVersion = ref("");
+	const latestVersion = getLatestDataVersionRef();
 	let dataVersionPollTimer: ReturnType<typeof setInterval> | null = null;
 
 	async function syncDataVersionSnapshot() {
 		try {
 			const { version } = await sheetsApi.fetchDataVersion();
-			lastKnownDataVersion.value = version;
-			latestRemoteDataVersion.value = "";
-			dismissedRemoteDataVersion.value = "";
+			applyKnownDataVersion(version);
 		} catch {
 			// Ignore version sync errors; borrow flow should still work.
 		}
@@ -28,12 +25,12 @@ export function useDataVersionPoll(options: {
 		if (isRefreshingLatestData.value) return;
 		try {
 			const { version } = await sheetsApi.fetchDataVersion();
-			if (!lastKnownDataVersion.value) {
-				lastKnownDataVersion.value = version;
+			if (!latestVersion.value) {
+				applyKnownDataVersion(version);
 				return;
 			}
-			if (version !== lastKnownDataVersion.value && version !== dismissedRemoteDataVersion.value) {
-				latestRemoteDataVersion.value = version;
+			if (version !== latestVersion.value) {
+				applyKnownDataVersion(version);
 				hasRemoteUpdate.value = true;
 			}
 		} catch {
@@ -42,7 +39,6 @@ export function useDataVersionPoll(options: {
 	}
 
 	function dismissRemoteUpdate() {
-		dismissedRemoteDataVersion.value = latestRemoteDataVersion.value;
 		hasRemoteUpdate.value = false;
 	}
 

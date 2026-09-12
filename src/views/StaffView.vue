@@ -18,10 +18,10 @@
 			<button
 				type="button"
 				class="mt-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 touch-manipulation"
-				:disabled="refreshingData"
-				@click="refreshStaffData"
+				:disabled="isRefreshingLatestData"
+				@click="refreshLatestData"
 			>
-				{{ refreshingData ? "更新中..." : "更新管理資料" }}
+				{{ isRefreshingLatestData ? "更新中..." : "更新管理資料" }}
 			</button>
 		</section>
 
@@ -51,20 +51,14 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onMounted } from "vue";
 import StaffOverview from "../components/StaffOverview.vue";
+import { useDataVersionPoll } from "../composables/useDataVersionPoll";
 import { useAssetsStore } from "../stores/assets";
 import { useRentalStore } from "../stores/rental";
-import { sheetsApi } from "../services/sheetsApi";
 
 const rentalStore = useRentalStore();
 const assetsStore = useAssetsStore();
-const hasRemoteUpdate = ref(false);
-const refreshingData = ref(false);
-const lastKnownDataVersion = ref("");
-const latestRemoteDataVersion = ref("");
-const dismissedRemoteDataVersion = ref("");
-let versionPollTimer: ReturnType<typeof setInterval> | null = null;
 
 async function loadStaffData(force = false) {
 	await Promise.all([
@@ -74,64 +68,20 @@ async function loadStaffData(force = false) {
 	]);
 }
 
-async function syncDataVersionSnapshot() {
-	try {
-		const { version } = await sheetsApi.fetchDataVersion();
-		lastKnownDataVersion.value = version;
-		latestRemoteDataVersion.value = "";
-		dismissedRemoteDataVersion.value = "";
-	} catch {
-		// Ignore version errors to avoid blocking staff operations.
-	}
-}
-
-async function checkRemoteDataVersion() {
-	if (document.visibilityState === "hidden") return;
-	try {
-		const { version } = await sheetsApi.fetchDataVersion();
-		if (!lastKnownDataVersion.value) {
-			lastKnownDataVersion.value = version;
-			return;
-		}
-		if (version !== lastKnownDataVersion.value && version !== dismissedRemoteDataVersion.value) {
-			latestRemoteDataVersion.value = version;
-			hasRemoteUpdate.value = true;
-		}
-	} catch {
-		// Ignore intermittent network errors for polling.
-	}
-}
-
-function dismissRemoteUpdate() {
-	dismissedRemoteDataVersion.value = latestRemoteDataVersion.value;
-	hasRemoteUpdate.value = false;
-}
-
-async function refreshStaffData() {
-	refreshingData.value = true;
-	try {
-		await loadStaffData(true);
-		await syncDataVersionSnapshot();
-		hasRemoteUpdate.value = false;
-	} finally {
-		refreshingData.value = false;
-	}
-}
+const {
+	hasRemoteUpdate,
+	isRefreshingLatestData,
+	syncDataVersionSnapshot,
+	dismissRemoteUpdate,
+	refreshLatestData,
+} = useDataVersionPoll({
+	onRefresh: () => loadStaffData(true),
+});
 
 onMounted(() => {
 	void (async () => {
 		await loadStaffData();
 		await syncDataVersionSnapshot();
-		versionPollTimer = setInterval(() => {
-			void checkRemoteDataVersion();
-		}, 30000);
 	})();
-});
-
-onBeforeUnmount(() => {
-	if (versionPollTimer) {
-		clearInterval(versionPollTimer);
-		versionPollTimer = null;
-	}
 });
 </script>

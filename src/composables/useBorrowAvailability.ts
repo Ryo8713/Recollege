@@ -91,6 +91,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				blockedRangesLoadedAt.value = Date.now();
 				return true;
 			} catch (_error) {
+				console.error("blockedRangesReady error", _error);
 				if (seq !== blockedRangesRequestSeq.value) {
 					if (blockedRangesInFlight) return blockedRangesInFlight;
 					return !shouldRefreshBlockedRanges();
@@ -225,7 +226,8 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				availableVenues.value = [];
 				availableEquipments.value = [];
 				availableReturnDates.value = [];
-				availabilityError.value = "本地計算失敗";
+				if(!ready) availabilityError.value = "本地計算失敗";
+				else if(assets.value.length === 0) availabilityError.value = "無法載入占用資料，請稍後再試";
 			}
 		} catch (error) {
 			if (seq !== availabilityRequestSeq.value) return;
@@ -390,7 +392,7 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		}
 	}
 
-	// ===== 快取管理 =====
+	
 	function clearAvailabilityCaches() {
 		availabilityCache.clear();
 		availabilityInFlight.clear();
@@ -401,7 +403,6 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		blockedRangesInFlight = null;
 	}
 
-	// ===== 使用者操作 =====
 	function selectAsset(id: string, type: Asset["type"]) {
 		if (selectedAssetId.value === id) {
 			selectedAssetId.value = "";

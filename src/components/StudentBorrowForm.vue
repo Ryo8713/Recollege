@@ -264,7 +264,6 @@ const {
 			clearAvailabilityCaches();
 			void blockedRangesReady(true);
 		},
-		syncDataVersion: () => syncDataVersionSnapshot(),
 	},
 );
 
@@ -283,7 +282,6 @@ const {
 	rentalStore,
 	assets,
 	submitFeedback: { startLoading, showSuccess, showError },
-	syncDataVersion: () => syncDataVersionSnapshot(),
 	holidayDates,
 	isStudentBorrowBlocked,
 	selectedAssetId,

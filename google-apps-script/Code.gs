@@ -495,9 +495,9 @@ function createAsset_(body) {
 
   sheet.appendRow([assetId, name, type, status, createdAt]);
   invalidateAssetsCache_();
-  bumpDataVersion_();
+  const version = bumpDataVersion_();
 
-  return { assetId: assetId };
+  return { assetId: assetId, version: version };
 }
 
 function deleteAsset_(body) {
@@ -520,8 +520,8 @@ function deleteAsset_(body) {
   sheet.deleteRow(rowIndex);
   deleteAssetPauseRanges_(assetId);
   invalidateAssetsCache_();
-  bumpDataVersion_();
-  return { ok: true, assetId: assetId, name: assetName };
+  const version = bumpDataVersion_();
+  return { ok: true, assetId: assetId, name: assetName, version: version };
 }
 
 function ensureAssetCanBeDeleted_(assetId) {
@@ -598,7 +598,7 @@ function createAssetPauseRange_(body) {
   const id = "pause-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
   const createdAt = getNowDateTimeText_();
   sheet.appendRow([id, assetId, startDate, endDate, note, createdAt]);
-  bumpDataVersion_();
+  const version = bumpDataVersion_();
   return {
     id: id,
     assetId: assetId,
@@ -606,6 +606,7 @@ function createAssetPauseRange_(body) {
     endDate: endDate,
     note: note,
     createdAt: createdAt,
+    version: version,
   };
 }
 
@@ -665,8 +666,8 @@ function createHoliday_(body) {
 
   const createdAt = getNowDateTimeText_();
   sheet.appendRow([date, note, createdAt, operator.account]);
-  bumpDataVersion_();
-  return { ok: true, date: date, note: note, createdAt: createdAt, createdBy: operator.account };
+  const version = bumpDataVersion_();
+  return { ok: true, date: date, note: note, createdAt: createdAt, createdBy: operator.account, version: version };
 }
 
 function deleteHoliday_(body) {
@@ -686,8 +687,8 @@ function deleteHoliday_(body) {
   for (var i = 0; i < rows.length; i++) {
     if (normalizeDateText_(rows[i][0]) === date) {
       sheet.deleteRow(i + 2);
-      bumpDataVersion_();
-      return { ok: true, date: date };
+      const version = bumpDataVersion_();
+      return { ok: true, date: date, version: version };
     }
   }
   throw new Error("找不到此國定假日：" + date);
@@ -778,7 +779,7 @@ function createGlobalPauseRange_(body) {
   const id = "global-pause-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
   const createdAt = getNowDateTimeText_();
   sheet.appendRow([id, startDate, endDate, note, createdAt, operator.account]);
-  bumpDataVersion_();
+  const version = bumpDataVersion_();
   return {
     id: id,
     startDate: startDate,
@@ -786,6 +787,7 @@ function createGlobalPauseRange_(body) {
     note: note,
     createdAt: createdAt,
     createdBy: operator.account,
+    version: version,
   };
 }
 
@@ -806,8 +808,8 @@ function deleteGlobalPauseRange_(body) {
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i][0] || "").trim() === id) {
       sheet.deleteRow(i + 2);
-      bumpDataVersion_();
-      return { ok: true, id: id };
+      const version = bumpDataVersion_();
+      return { ok: true, id: id, version: version };
     }
   }
   throw new Error("找不到此全校暫停區間：" + id);
@@ -1010,12 +1012,10 @@ function readBorrowApplications_() {
 }
 
 function readBorrowRecords_() {
-  // Ensure date-based statuses (待生效/租借中) are refreshed on read,
-  // so records don't stay stale when daily trigger hasn't run yet.
-  const reconcileResult = reconcileBorrowingState_();
-  if (reconcileResult.hasMeaningfulUpdates) {
-    bumpDataVersion_();
-  }
+  // Refresh date-based statuses for this response only.
+  // Do not bump dataVersion here — that would notify all clients from a read.
+  // Broadcast updates via reconcileBorrowingStateJob instead.
+  reconcileBorrowingState_();
 
   const sheet = getBorrowRecordsSheet_();
   const lastRow = sheet.getLastRow();
@@ -1152,9 +1152,9 @@ function createBorrowApplication_(body) {
     activityName,
     "",
   ]);
-  bumpDataVersion_();
+  const version = bumpDataVersion_();
 
-  return { ok: true, applicationId: applicationId };
+  return { ok: true, applicationId: applicationId, version: version };
 }
 
 function listAvailableAssets_(borrowedAt, expectedReturnAt) {
@@ -1544,8 +1544,8 @@ function createStudentBlock_(body) {
   }
 
   sheet.appendRow([studentId, todayText, note]);
-  bumpDataVersion_();
-  return { ok: true, studentId: studentId, blockedAt: todayText, note: note };
+  const version = bumpDataVersion_();
+  return { ok: true, studentId: studentId, blockedAt: todayText, note: note, version: version };
 }
 
 function deleteStudentBlock_(body) {
@@ -1562,8 +1562,8 @@ function deleteStudentBlock_(body) {
   for (var i = rows.length - 1; i >= 0; i--) {
     if (String(rows[i][0] || "").trim() === studentId) {
       sheet.deleteRow(i + 2);
-      bumpDataVersion_();
-      return { ok: true, studentId: studentId };
+      const version = bumpDataVersion_();
+      return { ok: true, studentId: studentId, version: version };
     }
   }
   throw new Error("找不到封鎖紀錄");
@@ -1826,8 +1826,8 @@ function updateBorrowRecordExpectedReturnAt_(body) {
   row[RECORD_COL_EXPECTED_RETURN_AT] = expectedReturnAt;
   recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
   reconcileBorrowingState_();
-  bumpDataVersion_();
-  return { ok: true, recordId: recordId, expectedReturnAt: expectedReturnAt };
+  const version = bumpDataVersion_();
+  return { ok: true, recordId: recordId, expectedReturnAt: expectedReturnAt, version: version };
 }
 
 function reviewBorrowApplication_(body) {
@@ -1891,7 +1891,7 @@ function reviewBorrowApplication_(body) {
 
   appSheet.getRange(appRowIndex, 1, 1, BORROW_APPLICATION_HEADERS.length).setValues([row]);
   reconcileBorrowingState_();
-  bumpDataVersion_();
+  const version = bumpDataVersion_();
   try {
     sendReviewResultEmail_(row, nextStatus, reviewedAt, staffName);
   } catch (mailError) {
@@ -1902,6 +1902,7 @@ function reviewBorrowApplication_(body) {
     applicationId: applicationId,
     status: nextStatus,
     recordId: linkedRecordId || "",
+    version: version,
   };
 }
 
@@ -2398,7 +2399,7 @@ function migrateItemNameTypeSplit() {
     ),
   };
   if (summary.applications > 0 || summary.records > 0) {
-    bumpDataVersion_();
+    summary.version = bumpDataVersion_();
   }
   console.log("itemName/itemType 遷移完成：" + JSON.stringify(summary));
   return summary;
@@ -2557,20 +2558,29 @@ function setupDailyReconcileTrigger() {
 
 function getDataVersion_() {
   const props = PropertiesService.getScriptProperties();
-  let version = String(props.getProperty(DATA_VERSION_KEY) || "").trim();
-  if (!version) {
-    version = createDataVersion_();
-    props.setProperty(DATA_VERSION_KEY, version);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    let version = String(props.getProperty(DATA_VERSION_KEY) || "").trim();
+    if (!version) {
+      version = "1";
+      props.setProperty(DATA_VERSION_KEY, version);
+    }
+    return version;
+  } finally {
+    lock.releaseLock();
   }
-  return version;
 }
 
 function bumpDataVersion_() {
-  const nextVersion = createDataVersion_();
-  PropertiesService.getScriptProperties().setProperty(DATA_VERSION_KEY, nextVersion);
-  return nextVersion;
-}
-
-function createDataVersion_() {
-  return new Date().toISOString() + "-" + Math.floor(Math.random() * 1000);
+  const props = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(5000);
+  try {
+    const nextVersion = String(Number(props.getProperty(DATA_VERSION_KEY) || 0) + 1);
+    props.setProperty(DATA_VERSION_KEY, nextVersion);
+    return nextVersion;
+  } finally {
+    lock.releaseLock();
+  }
 }

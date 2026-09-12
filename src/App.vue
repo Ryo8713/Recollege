@@ -45,6 +45,6 @@ const router = useRouter();
 
 function handleStaffLogout() {
 	authStore.logoutStaff();
-	router.push({ name: "register" });
+	router.push({ name: "student" });
 }
 </script>
