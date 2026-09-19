@@ -65,16 +65,22 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const venueAvailabilityInFlight = new Map<string, Promise<VenueAvailability>>();
 
 	// ===== blocked ranges =====
-	function shouldRefreshBlockedRanges(): boolean { 
+	function hasBlockedRangesSnapshot(): boolean {
+		return blockedRangesLoadedAt.value > 0;
+	}
+
+	function shouldRefreshBlockedRanges(): boolean {
 		if (!blockedRangesLoadedAt.value) return true;
 		return Date.now() - blockedRangesLoadedAt.value > BLOCKED_RANGES_TTL_MS;
 	}
 
 	async function blockedRangesReady(force = false): Promise<boolean> {
-		if (!force && blockedRangesInFlight) {
-			return blockedRangesInFlight;
-		}
-		if (!force && !shouldRefreshBlockedRanges()) { //check cache is still valid
+		// Serialize requests so intermittent GAS failures are not amplified by overlap.
+		if (blockedRangesInFlight) {
+			const joined = await blockedRangesInFlight;
+			if (!force) return joined;
+			if (blockedRangesInFlight) return blockedRangesInFlight;
+		} else if (!force && !shouldRefreshBlockedRanges()) {
 			return true;
 		}
 
@@ -83,20 +89,19 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			try {
 				const response = await sheetsApi.fetchAssetBlockedRanges();
 				if (seq !== blockedRangesRequestSeq.value) {
-					if (blockedRangesInFlight) return blockedRangesInFlight; // 改等最新
-					return !shouldRefreshBlockedRanges(); // 最新已結束（或被清掉）才看快照
+					return blockedRangesInFlight ?? hasBlockedRangesSnapshot();
 				}
 				blockedRangesByAssetId.value = response.blockedRangesByAssetId ?? {};
 				globalPauseRanges.value = response.globalPauseRanges ?? [];
 				blockedRangesLoadedAt.value = Date.now();
 				return true;
-			} catch (_error) {
-				console.error("blockedRangesReady error", _error);
+			} catch (error) {
+				console.error("blockedRangesReady error", error);
 				if (seq !== blockedRangesRequestSeq.value) {
-					if (blockedRangesInFlight) return blockedRangesInFlight;
-					return !shouldRefreshBlockedRanges();
+					return blockedRangesInFlight ?? hasBlockedRangesSnapshot();
 				}
-				return false;
+				// Keep serving the last good snapshot when the API intermittently returns non-JSON / times out.
+				return hasBlockedRangesSnapshot();
 			} finally {
 				if (seq === blockedRangesRequestSeq.value) {
 					blockedRangesInFlight = null;
@@ -226,8 +231,11 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				availableVenues.value = [];
 				availableEquipments.value = [];
 				availableReturnDates.value = [];
-				if(!ready) availabilityError.value = "本地計算失敗";
-				else if(assets.value.length === 0) availabilityError.value = "無法載入占用資料，請稍後再試";
+				if (!ready) {
+					availabilityError.value = "無法載入占用資料，請稍後再試";
+				} else if (assets.value.length === 0) {
+					availabilityError.value = "資產資料尚未載入，請稍後再試";
+				}
 			}
 		} catch (error) {
 			if (seq !== availabilityRequestSeq.value) return;
@@ -400,7 +408,8 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		lookupDatesCache.clear();
 		venueAvailabilityCache.clear();
 		venueAvailabilityInFlight.clear();
-		blockedRangesInFlight = null;
+		// Keep blockedRangesInFlight and the last snapshot so concurrent/force refresh
+		// can join in-flight work and fall back if GAS returns non-JSON.
 	}
 
 	function selectAsset(id: string, type: Asset["type"]) {
@@ -464,6 +473,16 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 			scheduleLoadAvailability();
 		},
 		{ immediate: true },
+	);
+
+	watch(
+		() => assets.value.length,
+		(length, previousLength) => {
+			if (length <= 0 || (previousLength ?? 0) > 0) return;
+			if (mode.value !== "borrow" || borrowEntryMode.value !== "dateFirst") return;
+			if (!form.borrowedAt) return;
+			scheduleLoadAvailability();
+		},
 	);
 
 	watch(
