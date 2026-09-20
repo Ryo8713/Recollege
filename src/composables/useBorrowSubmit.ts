@@ -164,32 +164,9 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 		return true;
 	}
 
-	function buildVenueTemporalPayload(): { borrowedAt: string; expectedReturnAt: string } | null {
-		const startHour = selectedVenueStartHour.value;
-		const endHour = selectedVenueEndHour.value;
-		if (startHour == null || endHour == null) return null;
-		return {
-			borrowedAt: `${form.borrowedAt} ${formatHourLabel(startHour)}`,
-			expectedReturnAt: `${form.borrowedAt} ${formatHourLabel(endHour)}`,
-		};
-	}
-
 	async function submitBorrow() {
 		borrowError.value = "";
-		if (!validateBorrowBeforeSubmit()) {
-			closeBorrowConfirmModal();
-			return;
-		}
 		closeBorrowConfirmModal();
-
-		const venuePayload = isVenueSelected.value ? buildVenueTemporalPayload() : null;
-		if (isVenueSelected.value && !venuePayload) {
-			borrowError.value = "請選擇空間借用時段。";
-			return;
-		}
-
-		const borrowedAtPayload = venuePayload?.borrowedAt ?? form.borrowedAt;
-		const expectedReturnAtPayload = venuePayload?.expectedReturnAt ?? form.expectedReturnAt;
 
 		submitFeedback.startLoading("正在送出借用申請…");
 
@@ -205,8 +182,8 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 				itemType: selectedAssetType.value,
 				itemName: buildItemName(),
 				assetId: selectedAssetId.value,
-				borrowedAt: borrowedAtPayload,
-				expectedReturnAt: expectedReturnAtPayload,
+				borrowedAt: form.borrowedAt,
+				expectedReturnAt: form.expectedReturnAt,
 			});
 			clearAvailabilityCaches();
 			void blockedRangesReady(true);
@@ -224,7 +201,7 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 
 	function openBorrowConfirmModal() {
 		borrowError.value = "";
-		void Promise.all([rentalStore.loadRecords(), rentalStore.loadStudentBlocks()]).then(() => {
+		void Promise.all([rentalStore.loadStudentBlocks()]).then(() => {
 			if (!validateBorrowBeforeSubmit()) return;
 			borrowConfirmSummary.value = createBorrowConfirmSummary();
 			showBorrowConfirmModal.value = true;

@@ -1022,9 +1022,6 @@ function readBorrowApplications_() {
 }
 
 function readBorrowRecords_() {
-  // Refresh date-based statuses for this response only.
-  // Do not bump dataVersion here — that would notify all clients from a read.
-  // Broadcast updates via reconcileBorrowingStateJob instead.
   reconcileBorrowingState_();
 
   const sheet = getBorrowRecordsSheet_();
