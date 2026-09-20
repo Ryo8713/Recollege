@@ -8,8 +8,8 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
     appRow[APP_COL_ITEM_NAME],
     parseStringArray_(appRow[APP_COL_ASSET_IDS])
   );
-  const borrowedAt = normalizeTemporalText_(appRow[APP_COL_BORROWED_AT]);
-  const expectedReturnAt = normalizeTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT]);
+  const borrowedAt = requireTemporalText_(appRow[APP_COL_BORROWED_AT], "borrowedAt");
+  const expectedReturnAt = requireTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
   const borrowerGroup = String(appRow[APP_COL_BORROWER_GROUP] || "").trim();
   const mentorName = String(appRow[APP_COL_MENTOR_NAME] || "").trim();
   const activityName = String(appRow[APP_COL_ACTIVITY_NAME] || "").trim();
