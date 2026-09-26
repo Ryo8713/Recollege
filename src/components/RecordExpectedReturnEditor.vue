@@ -167,9 +167,7 @@ async function loadEditOptions() {
 			sheetsApi.fetchHolidays(),
 		]);
 		const holidayDates = new Set(holidays.map((holiday) => holiday.date));
-		const pauseRanges = assetPauses
-			.filter((pause) => pause.assetId === assetId)
-			.map((pause) => ({ start: pause.startDate, end: pause.endDate }));
+		const pauseRanges = assetPauses.filter((pause) => pause.assetId === assetId);
 		const dates = computeValidEquipmentReturnDates(
 			props.record,
 			rentalStore.records,

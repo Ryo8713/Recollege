@@ -83,15 +83,6 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 		return diff > 0 ? diff : 0;
 	});
 
-	function resetBorrowForm() {
-		Object.assign(form, EMPTY_BORROW_FORM);
-	}
-
-	function buildItemName(): string {
-		if (!selectedAssetId.value || !selectedAssetName.value || !selectedAssetType.value) return "";
-		return selectedAssetName.value;
-	}
-
 	function createBorrowConfirmSummary(): BorrowConfirmSummary {
 		return {
 			form: { ...form },
@@ -179,8 +170,6 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 				borrowerGroup: form.borrowerGroup,
 				mentorName: form.mentorName,
 				activityName: form.activityName,
-				itemType: selectedAssetType.value,
-				itemName: buildItemName(),
 				assetId: selectedAssetId.value,
 				borrowedAt: form.borrowedAt,
 				expectedReturnAt: form.expectedReturnAt,
@@ -190,8 +179,8 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 			selectedAssetId.value = "";
 			selectedAssetType.value = "";
 			availableReturnDates.value = [];
+			Object.assign(form, EMPTY_BORROW_FORM);
 			resetVenueSlots();
-			resetBorrowForm();
 			submitFeedback.showSuccess("送出成功", "借用申請已送出。");
 		} catch (e) {
 			borrowError.value = e instanceof Error ? e.message : "送出失敗，請稍後再試。";

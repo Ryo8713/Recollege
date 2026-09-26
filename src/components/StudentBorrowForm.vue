@@ -192,7 +192,6 @@ const {
 	today,
 	holidayDates,
 	isSubmitting,
-	isStudentBorrowBlocked,
 	selectedAssetId,
 	selectedAssetType,
 	availableVenues,

@@ -42,8 +42,8 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const returnDateRequestSeq = ref(0);
 	const returnDateCache = new Map<string, string[]>();
 
-	const blockedRangesByAssetId = ref<Record<string, Array<{ start: string; end: string }>>>({});
-	const globalPauseRanges = ref<Array<{ start: string; end: string }>>([]);
+	const blockedRangesByAssetId = ref<Record<string, Array<{ startDate: string; endDate: string }>>>({});
+	const globalPauseRanges = ref<Array<{ startDate: string; endDate: string }>>([]);
 	const blockedRangesLoadedAt = ref(0);
 	const blockedRangesRequestSeq = ref(0);
 	let blockedRangesInFlight: Promise<boolean> | null = null;
@@ -112,19 +112,19 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 		return request;
 	}
 
-	function isBlockedByRanges(startDate: string, endDate: string, ranges: Array<{ start: string; end: string }>,): boolean {
-		return ranges.some( (range) => range.start <= endDate && range.end >= startDate);
+	function isBlockedByRanges(startDate: string, endDate: string, ranges: Array<{ startDate: string; endDate: string }>,): boolean {
+		return ranges.some( (range) => range.startDate <= endDate && range.endDate >= startDate);
 	}
 
-	function isBlockedOnDate(dateText: string, ranges: Array<{ start: string; end: string }>): boolean {
-		return ranges.some((range) => range.start <= dateText && dateText <= range.end);
+	function isBlockedOnDate(dateText: string, ranges: Array<{ startDate: string; endDate: string }>): boolean {
+		return ranges.some((range) => range.startDate <= dateText && dateText <= range.endDate);
 	}
 
 	function isGloballyClosedDate(dateText: string): boolean {
-		return globalPauseRanges.value.some((range) => range.start <= dateText && dateText <= range.end);
+		return globalPauseRanges.value.some((range) => range.startDate <= dateText && dateText <= range.endDate);
 	}
 
-	function getCombinedBlockedRanges(assetId: string): Array<{ start: string; end: string }> {
+	function getCombinedBlockedRanges(assetId: string): Array<{ startDate: string; endDate: string }> {
 		const assetRanges = blockedRangesByAssetId.value[assetId] ?? [];
 		return [...globalPauseRanges.value, ...assetRanges];
 	}

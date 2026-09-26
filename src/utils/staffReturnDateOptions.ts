@@ -12,9 +12,9 @@ export function isDateRangeOverlapping(startA: string, endA: string, startB: str
 export function isPeriodBlockedByRanges(
 	startDate: string,
 	endDate: string,
-	ranges: Array<{ start: string; end: string }>,
+	ranges: Array<{ startDate: string; endDate: string }>,
 ): boolean {
-	return ranges.some((range) => isDateRangeOverlapping(range.start, range.end, startDate, endDate));
+	return ranges.some((range) => isDateRangeOverlapping(range.startDate, range.endDate, startDate, endDate));
 }
 
 export function findConflictingBorrowRecord(
@@ -46,8 +46,8 @@ export function findConflictingBorrowRecord(
 export function computeValidEquipmentReturnDates(
 	record: BorrowRecord,
 	allRecords: BorrowRecord[],
-	assetPauseRanges: Array<{ start: string; end: string }>,
-	globalPauseRanges: Array<{ start: string; end: string }>,
+	assetPauseRanges: Array<{ startDate: string; endDate: string }>,
+	globalPauseRanges: Array<{ startDate: string; endDate: string }>,
 	holidayDates: Set<string>,
 	maxDays = 365,
 ): string[] {

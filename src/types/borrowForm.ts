@@ -66,6 +66,5 @@ export interface DateFirstEquipmentReturn {
 }
 
 export interface DateFirstSubmitState {
-	isStudentBorrowBlocked: boolean;
 	submitDisabled: boolean;
 }

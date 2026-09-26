@@ -3,16 +3,15 @@ export type ApplicationStatus = "待審核" | "已核准" | "已駁回";
 export type RecordStatus = "待生效" | "租借中" | "已歸還";
 export type ReturnRequestStatus = "" | "待審核";
 export type AssetType = "venue" | "equipment";
-export type ItemType = AssetType | "";
 export type AssetStatus = "可租借" | "已借出" | "停用中";
 
-export const ITEM_TYPE_LABELS: Record<AssetType, string> = {
+export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
     venue: "空間",
     equipment: "設備",
 };
 
-export function getItemTypeLabel(itemType: ItemType): string {
-    return itemType ? ITEM_TYPE_LABELS[itemType] : "";
+export function getAssetTypeLabel(type: AssetType | ""): string {
+    return type ? ASSET_TYPE_LABELS[type] : "";
 }
 
 export interface Asset {
@@ -33,9 +32,8 @@ export interface BorrowApplication {
     borrowerGroup: string;
     mentorName: string;
     activityName: string;
-    /** 借用項目類型；舊資料若無法判定則為空字串 */
-    itemType: ItemType;
-    /** 純項目名稱（不含「空間:」等前綴） */
+    /** 借用項目類型（venue / equipment） */
+    itemType: AssetType;
     itemName: string;
     assetId: string;
     borrowedAt: string;
@@ -57,7 +55,7 @@ export interface BorrowRecord {
     borrowerGroup: string;
     mentorName: string;
     activityName: string;
-    itemType: ItemType;
+    itemType: AssetType;
     itemName: string;
     assetId: string;
     borrowedAt: string;

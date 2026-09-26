@@ -18,7 +18,6 @@ interface UseDateFirstBorrowPanelParams {
 	today: string;
 	holidayDates: Ref<Set<string>>;
 	isSubmitting: Ref<boolean>;
-	isStudentBorrowBlocked: Ref<boolean>;
 	selectedAssetId: Ref<string>;
 	selectedAssetType: Ref<Asset["type"] | "">;
 	availableVenues: Ref<Asset[]>;
@@ -40,7 +39,6 @@ export function useDateFirstBorrowPanel(params: UseDateFirstBorrowPanelParams) {
 		today,
 		holidayDates,
 		isSubmitting,
-		isStudentBorrowBlocked,
 		selectedAssetId,
 		selectedAssetType,
 		availableVenues,
@@ -116,12 +114,10 @@ export function useDateFirstBorrowPanel(params: UseDateFirstBorrowPanelParams) {
 	}));
 
 	const submitState = computed<DateFirstSubmitState>(() => ({
-		isStudentBorrowBlocked: isStudentBorrowBlocked.value,
 		submitDisabled:
 			isSubmitting.value ||
 			availabilityLoading.value ||
-			returnDateLoading.value ||
-			isStudentBorrowBlocked.value,
+			returnDateLoading.value,
 	}));
 
 	const panelProps = computed(() => ({

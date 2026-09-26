@@ -35,9 +35,6 @@
 				<input v-model.trim="form.activityName" class="w-full rounded-xl border border-slate-300 px-3 py-2 outline-none ring-blue-500 focus:ring" />
 			</label>
 		</div>
-		<p v-if="form.studentId && isStudentBorrowBlocked" class="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-			{{ BORROW_BLOCK_MESSAGE }}
-		</p>
 		<button
 			type="button"
 			:disabled="submitDisabled"
@@ -51,11 +48,9 @@
 
 <script setup lang="ts">
 import type { BorrowFormState } from "../../types/borrowForm";
-import { BORROW_BLOCK_MESSAGE } from "../../utils/borrowRestrictions";
 
 defineProps<{
 	form: BorrowFormState;
-	isStudentBorrowBlocked: boolean;
 	submitDisabled: boolean;
 }>();
 

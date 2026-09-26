@@ -62,10 +62,6 @@ export function useReturnSearch(submitFeedback: SubmitFeedbackActions, options: 
 			await Promise.all(
 				recordsToSubmit.map((record) =>
 					rentalStore.submitReturnApplication({
-						studentId: record.studentId,
-						studentName: record.studentName,
-						studentPhone: record.studentPhone,
-						studentEmail: record.studentEmail,
 						recordId: record.id,
 					}),
 				),

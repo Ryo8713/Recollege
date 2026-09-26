@@ -9,7 +9,7 @@ import {
     BORROW_BLOCK_MESSAGE,
     wasReturnedLate,
 } from "../utils/borrowRestrictions";
-import type { BorrowApplication, BorrowRecord, ItemType, StudentBlock } from "../types/rental";
+import type { BorrowApplication, BorrowRecord, StudentBlock } from "../types/rental";
 
 export interface ReturnSearchRecord extends BorrowRecord {
     returnPending: boolean;
@@ -184,26 +184,26 @@ export const useRentalStore = defineStore("rental", () => {
         borrowerGroup: string;
         mentorName: string;
         activityName: string;
-        itemType: ItemType;
-        itemName: string;
         assetId: string;
         borrowedAt: string;
         expectedReturnAt: string;
     }) {
-        await Promise.all([loadRecords(), loadStudentBlocks()]);
-        if (isStudentBorrowRestricted(payload.studentId)) {
-            throw new Error(BORROW_BLOCK_MESSAGE);
+        const asset = assetsStore.assets.find((item) => item.id === payload.assetId);
+        if (!asset) {
+            throw new Error("找不到借用項目，請重新整理後再試。");
         }
 
         const appPayload = { ...payload, type: "借用申請" as const };
         const { applicationId } = await sheetsApi.createBorrowApplication(appPayload);
 
         const application: BorrowApplication = {
-        id: applicationId,
-        type: "借用申請",
-        ...payload,
-        status: "待審核",
-        createdAt: getNowDateTimeText(),
+            id: applicationId,
+            type: "借用申請",
+            ...payload,
+            itemType: asset.type,
+            itemName: asset.name,
+            status: "待審核",
+            createdAt: getNowDateTimeText(),
         };
         applications.value.unshift(application);
     }
@@ -213,6 +213,13 @@ export const useRentalStore = defineStore("rental", () => {
         if (!app || app.status !== "待審核" || isReviewing(applicationId)) return;
 
         reviewError.value = "";
+        if (app.type === "借用申請") {
+            await loadStudentBlocks({ force: true });
+            if (isStudentBorrowRestricted(app.studentId)) {
+                reviewError.value = BORROW_BLOCK_MESSAGE;
+                return;
+            }
+        }
         beginReview(applicationId);
 
         const previousStatus = app.status;
@@ -384,25 +391,25 @@ export const useRentalStore = defineStore("rental", () => {
         await loadRecords({ force: true });
     }
 
-    async function submitReturnApplication(payload: {
-        studentId: string;
-        studentName: string;
-        studentPhone: string;
-        studentEmail: string;
-        recordId: string;
-    }) {
+    async function submitReturnApplication(payload: { recordId: string }) {
         const record = records.value.find((r) => r.id === payload.recordId);
         if (!record) return;
         if (record.returnRequestStatus === "待審核") {
             throw new Error("此項目已有待審核歸還申請，請等待職員審核。");
         }
 
-        const appPayload = {
-            type: "歸還申請" as const,
-            studentId: payload.studentId,
-            studentName: payload.studentName,
-            studentPhone: payload.studentPhone,
-            studentEmail: payload.studentEmail,
+        const { applicationId } = await sheetsApi.createBorrowApplication({
+            type: "歸還申請",
+            recordId: payload.recordId,
+        });
+
+        const app: BorrowApplication = {
+            id: applicationId,
+            type: "歸還申請",
+            studentId: record.studentId,
+            studentName: record.studentName,
+            studentPhone: record.studentPhone,
+            studentEmail: record.studentEmail,
             borrowerGroup: record.borrowerGroup,
             mentorName: record.mentorName,
             activityName: record.activityName,
@@ -412,27 +419,8 @@ export const useRentalStore = defineStore("rental", () => {
             borrowedAt: record.borrowedAt,
             expectedReturnAt: record.expectedReturnAt,
             recordId: payload.recordId,
-        };
-        const { applicationId } = await sheetsApi.createBorrowApplication(appPayload);
-
-        const app: BorrowApplication = {
-        id: applicationId,
-        type: "歸還申請",
-        studentId: payload.studentId,
-        studentName: payload.studentName,
-        studentPhone: payload.studentPhone,
-        studentEmail: payload.studentEmail,
-        borrowerGroup: record.borrowerGroup,
-        mentorName: record.mentorName,
-        activityName: record.activityName,
-        itemType: record.itemType,
-        itemName: record.itemName,
-        assetId: record.assetId,
-        borrowedAt: record.borrowedAt,
-        expectedReturnAt: record.expectedReturnAt,
-        recordId: payload.recordId,
-        status: "待審核",
-        createdAt: getNowDateTimeText(),
+            status: "待審核",
+            createdAt: getNowDateTimeText(),
         };
         applications.value.unshift(app);
         record.returnRequestStatus = "待審核";

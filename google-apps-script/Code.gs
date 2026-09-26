@@ -80,8 +80,6 @@ const RECORD_COL_MENTOR_NAME = 14;
 const RECORD_COL_ACTIVITY_NAME = 15;
 const VALID_TYPES = ["venue", "equipment"];
 const ITEM_TYPE_LABELS = { venue: "空間", equipment: "設備" };
-// 舊資料 itemName 為「空間:名稱」／「設備:名稱」格式，拆欄後以此解析前綴
-const LEGACY_ITEM_NAME_PREFIX_PATTERN = /^(空間|場地|設備|器材)\s*[:：]\s*/;
 const VALID_APPLICATION_TYPES = ["借用申請", "歸還申請"];
 const VALID_APPLICATION_STATUS = ["待審核", "已核准", "已駁回"];
 const VALID_RECORD_STATUS = ["待生效", "租借中", "已歸還"];
@@ -298,7 +296,7 @@ function getAssetPauseSheet_() {
 }
 
 function getBorrowApplicationsSheet_() {
-  const sheet = getBorrowSheet_(SHEET_BORROW_APPLICATIONS, BORROW_APPLICATION_HEADERS);
+  const sheet = getSheetWithHeaders_(SHEET_BORROW_APPLICATIONS, BORROW_APPLICATION_HEADERS);
   ensureColumnAsText_(sheet, 5); // studentPhone
   // 空間以小時計，borrowedAt/expectedReturnAt 可能為「YYYY-MM-DD HH:mm」，需存為純文字
   ensureColumnAsText_(sheet, APP_COL_BORROWED_AT + 1);
@@ -307,25 +305,10 @@ function getBorrowApplicationsSheet_() {
 }
 
 function getBorrowRecordsSheet_() {
-  const sheet = getBorrowSheet_(SHEET_BORROW_RECORDS, BORROW_RECORD_HEADERS);
+  const sheet = getSheetWithHeaders_(SHEET_BORROW_RECORDS, BORROW_RECORD_HEADERS);
   ensureColumnAsText_(sheet, 4); // studentPhone
   ensureColumnAsText_(sheet, RECORD_COL_BORROWED_AT + 1);
   ensureColumnAsText_(sheet, RECORD_COL_EXPECTED_RETURN_AT + 1);
-  return sheet;
-}
-
-// 借用兩表的欄位順序由 ensureBorrowSheetColumnLayout_ 依表頭名稱維護，
-// 不能走 ensureHeaders_（表頭改名時它會插入空白列，把舊表頭擠成資料列）。
-function getBorrowSheet_(sheetName, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(sheetName);
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.setFrozenRows(1);
-    return sheet;
-  }
-  ensureBorrowSheetColumnLayout_(sheet, headers);
   return sheet;
 }
 
@@ -407,39 +390,73 @@ function getSheetWithHeaders_(sheetName, headers) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
   } else {
-    ensureHeaders_(sheet, headers);
+    alignSheetToHeaders_ (sheet, headers);
   }
-
   return sheet;
 }
 
-function ensureHeaders_(sheet, headers) {
-  const firstRow = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  const needsHeader = headers.some(function (h, i) {
-    return String(firstRow[i] || "").trim() !== h;
-  });
-
-  const existingPrefixMatches = headers.every(function (h, i) {
-    const current = String(firstRow[i] || "").trim();
-    return current === h || (i >= sheet.getLastColumn() && current === "");
-  });
-  if (needsHeader && existingPrefixMatches && sheet.getLastColumn() < headers.length) {
-    sheet.getRange(1, sheet.getLastColumn() + 1, 1, headers.length - sheet.getLastColumn()).setValues([
-      headers.slice(sheet.getLastColumn()),
-    ]);
+function alignSheetToHeaders_ (sheet, desiredHeaders) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) {
+    sheet.getRange(1, 1, 1, desiredHeaders.length).setValues([desiredHeaders]);
     sheet.setFrozenRows(1);
-    return;
+    return true;
   }
 
-  if (sheet.getLastRow() === 0 || needsHeader) {
-    if (sheet.getLastRow() === 0) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    } else {
-      sheet.insertRowBefore(1);
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  const oldHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
+    return String(h || "").trim();
+  });
+  const alreadyMatched = desiredHeaders.every(function (h, i) {
+    return oldHeaders[i] === h;
+  });
+  if (alreadyMatched) return false;
+
+  const oldValues = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+
+  const oldIndexByName = {};
+  for (var c = 0; c < oldHeaders.length; c++) {
+    if (oldHeaders[c] && oldIndexByName[oldHeaders[c]] === undefined) {
+      oldIndexByName[oldHeaders[c]] = c;
     }
-    sheet.setFrozenRows(1);
   }
+
+  const sourceIndexes = desiredHeaders.map(function (h) {
+    const idx = oldIndexByName[h];
+    return idx === undefined ? -1 : idx;
+  });
+  const newHeaders = desiredHeaders.slice();
+  for (var o = 0; o < oldHeaders.length; o++) {
+    if (sourceIndexes.indexOf(o) >= 0) continue;
+    const hasData = oldValues.some(function (row, r) {
+      return r > 0 && row[o] !== "" && row[o] !== null;
+    });
+    if (!hasData) continue;
+    sourceIndexes.push(o);
+    newHeaders.push(oldHeaders[o]);
+  }
+
+  const oldFormats = sheet.getRange(1, 1, lastRow, lastCol).getNumberFormats();
+  sheet.clear();
+  const newValues = [];
+  const newFormats = [];
+  for (var r = 0; r < lastRow; r++) {
+    const valueRow = [];
+    const formatRow = [];
+    for (var n = 0; n < sourceIndexes.length; n++) {
+      const src = sourceIndexes[n];
+      valueRow.push(r === 0 ? newHeaders[n] : src < 0 ? "" : oldValues[r][src]);
+      formatRow.push(src < 0 ? "@" : oldFormats[r][src]);
+    }
+    newValues.push(valueRow);
+    newFormats.push(formatRow);
+  }
+
+  const target = sheet.getRange(1, 1, lastRow, newHeaders.length);
+  target.setNumberFormats(newFormats);
+  target.setValues(newValues);
+  sheet.setFrozenRows(1);
+  return true;
 }
 
 function invalidateAssetsCache_() {
@@ -732,20 +749,13 @@ function readGlobalPauseRanges_() {
   return ranges;
 }
 
-function getGlobalPauseRanges_() {
-  const ranges = readGlobalPauseRanges_();
-  return ranges.map(function (range) {
-    return { start: range.startDate, end: range.endDate };
-  });
-}
-
 function isGloballyClosedDate_(dateText, globalPauseRanges) {
-  const ranges = globalPauseRanges || getGlobalPauseRanges_();
+  const ranges = globalPauseRanges || readGlobalPauseRanges_();
   return isDateWithinAnyRange_(dateText, ranges);
 }
 
 function ensurePeriodNotGloballyClosed_(startDate, endDate) {
-  const ranges = getGlobalPauseRanges_();
+  const ranges = readGlobalPauseRanges_();
   if (isBlockedByRanges_(startDate, endDate, ranges)) {
     throw new Error("此借用期間落在全校暫停借用區間內，暫不可借。");
   }
@@ -1073,43 +1083,62 @@ function createBorrowApplication_(body) {
     throw new Error("type 必須為 借用申請 或 歸還申請");
   }
 
-  const studentId = requireField_(body && body.studentId, "studentId");
-  const studentName = requireField_(body && body.studentName, "studentName");
-  const studentPhone = normalizePhoneText_(requireField_(body && body.studentPhone, "studentPhone"));
-  const studentEmail = requireField_(body && body.studentEmail, "studentEmail");
-  const rawItemName = requireField_(body && body.itemName, "itemName");
-  const borrowerGroup = String((body && body.borrowerGroup) || "").trim();
-  const mentorName = String((body && body.mentorName) || "").trim();
-  const activityName = String((body && body.activityName) || "").trim();
-  const assetId = requireField_(body && body.assetId, "assetId");
-  const recordId = String((body && body.recordId) || "").trim();
-  const assetType = getAssetTypeMap_()[assetId];
-  // itemType 以資產表為準；找不到資產時才採用前端傳入值（或舊格式前綴）
-  const item = resolveItemTypeAndName_(
-    normalizeItemType_(assetType) || (body && body.itemType),
-    rawItemName,
-    assetId
-  );
-  const itemType = item.itemType;
-  const itemName = item.itemName;
-  if (!itemName) {
-    throw new Error("itemName 為必填");
-  }
-
+  let studentId;
+  let studentName;
+  let studentPhone;
+  let studentEmail;
+  let borrowerGroup;
+  let mentorName;
+  let activityName;
+  let assetId;
+  let itemType;
+  let itemName;
   let borrowedAt;
   let expectedReturnAt;
+  let recordId = "";
 
   if (type === "借用申請") {
-    ensureStudentEligibleForBorrow_(studentId);
-    if (!borrowerGroup) {
-      throw new Error("borrowerGroup 為必填");
+    studentId = requireField_(body && body.studentId, "studentId");
+    studentName = requireField_(body && body.studentName, "studentName");
+    studentPhone = requireField_(body && body.studentPhone, "studentPhone");
+    studentEmail = requireField_(body && body.studentEmail, "studentEmail");
+    assetId = requireField_(body && body.assetId, "assetId");
+    borrowerGroup = requireField_(body && body.borrowerGroup, "borrowerGroup");
+    activityName = requireField_(body && body.activityName, "activityName");
+    mentorName = String((body && body.mentorName) || "").trim();
+
+    const asset = getAssetOrThrow_(assetId);
+
+    const blocks = readStudentBlocks_(); 
+    for (var b = 0; b < blocks.length; b++) {
+      if (blocks[b].studentId === studentId) {
+        throw new Error("您目前無法提出借用申請。請洽詢書院辦公室。");
+      }
     }
-    if (!activityName) {
-      throw new Error("activityName 為必填");
+
+    const holidaySet = getHolidaySet_();
+    var earliest = addDaysText_(getTodayText_(), 1);
+    var count = 0;
+    for (var i = 0; i < 365; i++) {
+      if (!isHoliday_(earliest, holidaySet)) {
+        count++;
+        if (count >= BORROW_LEAD_WORKING_DAYS) break;
+      }
+      earliest = addDaysText_(earliest, 1);
     }
-    if (assetType === "venue") {
+    if (getDatePart_(body.borrowedAt) < earliest) {
+      throw new Error(
+        "因申請需約 " +
+          BORROW_LEAD_WORKING_DAYS +
+          " 個工作天作業時間，最早可借用日期為 " +
+          earliest +
+          "（已排除週末與國定假日）。"
+      );
+    }
+    
+    if (asset.type === "venue") {
       const booking = validateVenueBooking_(
-        assetId,
+        asset,
         body && body.borrowedAt,
         body && body.expectedReturnAt
       );
@@ -1120,16 +1149,23 @@ function createBorrowApplication_(body) {
       expectedReturnAt = requireDateText_(body && body.expectedReturnAt, "expectedReturnAt");
       ensureDateRange_(borrowedAt, expectedReturnAt);
       ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
-      ensureAssetAvailableForPeriod_(assetId, borrowedAt, expectedReturnAt);
+      ensureAssetAvailableForPeriod_(asset, borrowedAt, expectedReturnAt);
     }
-    ensureBorrowLeadTime_(borrowedAt);
   } else {
-    borrowedAt = requireTemporalText_(body && body.borrowedAt, "borrowedAt");
-    expectedReturnAt = requireTemporalText_(body && body.expectedReturnAt, "expectedReturnAt");
-    if (!recordId) {
-      throw new Error("歸還申請缺少 recordId");
-    }
-    markBorrowRecordReturnPending_(recordId);
+    recordId = requireField_(body && body.recordId, "recordId");
+    const record = markBorrowRecordReturnPending_(recordId);
+    studentId = record.studentId;
+    studentName = record.studentName;
+    studentPhone = record.studentPhone;
+    studentEmail = record.studentEmail;
+    borrowerGroup = record.borrowerGroup;
+    mentorName = record.mentorName;
+    activityName = record.activityName;
+    assetId = record.assetId;
+    itemName = record.itemName;
+    itemType = record.itemType;
+    borrowedAt = record.borrowedAt;
+    expectedReturnAt = record.expectedReturnAt;
   }
 
   const applicationId = generateApplicationId_(type);
@@ -1228,14 +1264,13 @@ function getAssetOrThrow_(assetId) {
   throw new Error("找不到資產：" + assetId);
 }
 
-function ensureAssetAvailableForPeriod_(assetId, borrowedAt, expectedReturnAt) {
-  const asset = getAssetOrThrow_(assetId);
+function ensureAssetAvailableForPeriod_(asset, borrowedAt, expectedReturnAt) {
   ensurePeriodNotGloballyClosed_(borrowedAt, expectedReturnAt);
 
   if (asset.status === "停用中") {
     throw new Error("資產停用中，暫不可借：" + asset.name);
   }
-  if (getOccupiedAssetIdSetForPeriod_(borrowedAt, expectedReturnAt)[assetId]) {
+  if (getOccupiedAssetIdSetForPeriod_(borrowedAt, expectedReturnAt)[asset.id]) {
     throw new Error("資產時段衝突，請改選其他項目：" + asset.name);
   }
 }
@@ -1290,7 +1325,7 @@ function listAssetAvailableDates_(assetId, fromDate, windowDays) {
     return { assetId: assetId, fromDate: fromDate, dates: [] };
   }
 
-  const globalPauseRanges = getGlobalPauseRanges_();
+  const globalPauseRanges = readGlobalPauseRanges_();
   if (targetAsset.type === "venue") {
     const intervalsByDate = getVenueBookingContext_(assetId);
     const pauseRanges = getPauseRangesByAssetId_()[assetId] || [];
@@ -1337,8 +1372,8 @@ function listAssetBlockedRanges_() {
 
     for (var r = 0; r < ranges.length; r++) {
       const range = ranges[r];
-      if (String(range.end || "").trim() >= todayText) {
-        filtered.push({ start: range.start, end: range.end });
+      if (String(range.endDate || "").trim() >= todayText) {
+        filtered.push({ startDate: range.startDate, endDate: range.endDate });
       }
     }
 
@@ -1350,7 +1385,7 @@ function listAssetBlockedRanges_() {
   return {
     today: todayText,
     blockedRangesByAssetId: normalized,
-    globalPauseRanges: getGlobalPauseRanges_(),
+    globalPauseRanges: readGlobalPauseRanges_(),
   };
 }
 
@@ -1384,7 +1419,7 @@ function getBlockedRangesByAssetId_() {
       if (!blockedRangeMap[currentAssetId]) {
         blockedRangeMap[currentAssetId] = [];
       }
-      blockedRangeMap[currentAssetId].push({ start: borrowedAt, end: expectedReturnAt });
+      blockedRangeMap[currentAssetId].push({ startDate: borrowedAt, endDate: expectedReturnAt });
     }
   }
 
@@ -1397,7 +1432,7 @@ function getBlockedRangesByAssetId_() {
     }
     const ranges = pauseRangesByAssetId[pauseAssetId] || [];
     for (var r = 0; r < ranges.length; r++) {
-      blockedRangeMap[pauseAssetId].push({ start: ranges[r].start, end: ranges[r].end });
+      blockedRangeMap[pauseAssetId].push({ startDate: ranges[r].startDate, endDate: ranges[r].endDate });
     }
   }
 
@@ -1417,7 +1452,7 @@ function getPauseRangesByAssetId_() {
     if (!map[range.assetId]) {
       map[range.assetId] = [];
     }
-    map[range.assetId].push({ start: range.startDate, end: range.endDate });
+    map[range.assetId].push({ startDate: range.startDate, endDate: range.endDate });
   }
   pauseRangesByAssetIdCache_ = map;
   return pauseRangesByAssetIdCache_;
@@ -1455,19 +1490,6 @@ function readStudentBlocks_() {
     });
   }
   return list;
-}
-
-function isStudentBlocked_(studentId) {
-  const normalizedId = String(studentId || "").trim();
-  if (!normalizedId) return false;
-  const sheet = getStudentBlocksSheet_();
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return false;
-  const rows = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][0] || "").trim() === normalizedId) return true;
-  }
-  return false;
 }
 
 // 每日時間觸發器呼叫：掃描目前逾期紀錄，將學號寫入封鎖名單（若尚未登記）。
@@ -1562,17 +1584,9 @@ function deleteStudentBlock_(body) {
   throw new Error("找不到封鎖紀錄");
 }
 
-function ensureStudentEligibleForBorrow_(studentId) {
-  if (isStudentBlocked_(studentId)) {
-    throw new Error(
-      "您目前有逾期或未準時歸還的借用紀錄，暫無法提出借用申請。請先完成歸還並洽詢服務台。"
-    );
-  }
-}
-
 function isBlockedByRanges_(startDate, endDate, ranges) {
   for (var i = 0; i < ranges.length; i++) {
-    if (isDateRangeOverlapping_(ranges[i].start, ranges[i].end, startDate, endDate)) {
+    if (isDateRangeOverlapping_(ranges[i].startDate, ranges[i].endDate, startDate, endDate)) {
       return true;
     }
   }
@@ -1613,7 +1627,7 @@ function getVenueBookingContext_(assetId, dateText, excludeRecordId) {
 
 function isDateWithinAnyRange_(dateText, ranges) {
   for (var i = 0; i < ranges.length; i++) {
-    if (ranges[i].start <= dateText && dateText <= ranges[i].end) return true;
+    if (ranges[i].startDate <= dateText && dateText <= ranges[i].endDate) return true;
   }
   return false;
 }
@@ -1653,47 +1667,46 @@ function listVenueOccupiedSlots_(assetId, dateText) {
   return { occupied: intervals };
 }
 
-// excludeRecordId：修改既有紀錄應歸還時間時傳入，略過「需為今天或之後」並排除自身占用
-function validateVenueBooking_(assetId, startRaw, endRaw, excludeRecordId) {
+function validateVenueBooking_(asset, startRaw, endRaw, excludeRecordId) {
+  // 格式／時間
   const start = requireDateTimeText_(startRaw, "空間借用開始時間");
   const end = requireDateTimeText_(endRaw, "空間借用結束時間");
+  const StartDate = getDatePart_(start);
+  const EndDate = getDatePart_(end);
+  const startHour = getHourFromDateTime_(start);
+  const endHour = getHourFromDateTime_(end);
 
-  const date = getDatePart_(start);
-  if (getDatePart_(end) !== date) {
+  if (StartDate !== EndDate) {
     throw new Error("空間借用需於同一天內，不可跨日。");
   }
   if (getMinuteFromDateTime_(start) !== 0 || getMinuteFromDateTime_(end) !== 0) {
     throw new Error("空間借用需以整點為單位。");
   }
-  if (!excludeRecordId && date < getTodayText_()) {
-    throw new Error("借用日期需為今天或之後。");
-  }
-  ensurePeriodNotGloballyClosed_(date, date);
-
-  const startHour = getHourFromDateTime_(start);
-  const endHour = getHourFromDateTime_(end);
   if (startHour >= endHour) {
     throw new Error("結束時間需晚於開始時間。");
   }
 
+  // 規則
+  if (!excludeRecordId && StartDate < getTodayText_()) {
+    throw new Error("借用日期需為今天或之後。");
+  }
+
   const holidaySet = getHolidaySet_();
-  const open = getVenueOpenHoursForDate_(date, holidaySet);
+  const open = getVenueOpenHoursForDate_(StartDate, holidaySet);
   if (startHour < open.openStart || endHour > open.openEnd) {
     throw new Error(
       "該日可借時段為 " + formatHour_(open.openStart) + "-" + formatHour_(open.openEnd) + "。"
     );
   }
 
-  const target = getAssetOrThrow_(assetId);
-  if (target.status === "停用中") {
-    throw new Error("資產停用中，暫不可借：" + target.name);
-  }
+  ensurePeriodNotGloballyClosed_(StartDate, EndDate);
 
-  const pauseRanges = getPauseRangesByAssetId_()[assetId] || [];
-  if (isDateWithinAnyRange_(date, pauseRanges)) {
+  const pauseRanges = getPauseRangesByAssetId_()[asset.id] || [];
+  if (isDateWithinAnyRange_(StartDate, pauseRanges)) {
     throw new Error("該空間此日暫停出借，請改選其他日期。");
   }
-  const intervals = getVenueBookingContext_(assetId, date, excludeRecordId);
+
+  const intervals = getVenueBookingContext_(asset.id, StartDate, excludeRecordId);
   for (var i = 0; i < intervals.length; i++) {
     if (startHour < intervals[i].end && intervals[i].start < endHour) {
       throw new Error(
@@ -1738,7 +1751,7 @@ function findEquipmentPeriodConflict_(assetId, borrowedAt, expectedReturnAt, exc
       recordId: recordId,
       studentId: String(rows[i][1] || "").trim(),
       studentName: String(rows[i][2] || "").trim(),
-      itemName: parseLegacyItemName_(rows[i][RECORD_COL_ITEM_NAME]).name,
+      itemName: String(rows[i][RECORD_COL_ITEM_NAME] || "").trim(),
       borrowedAt: otherBorrowedAt,
       expectedReturnAt: otherExpectedReturnAt,
     };
@@ -1805,10 +1818,11 @@ function updateBorrowRecordExpectedReturnAt_(body) {
   }
 
   var expectedReturnAt;
+  const asset = getAssetOrThrow_(assetId);
 
-  if (getAssetTypeMap_()[assetId] === "venue") {
+  if (asset.type === "venue") {
     expectedReturnAt = requireDateTimeText_(rawExpectedReturnAt, "expectedReturnAt");
-    validateVenueBooking_(assetId, borrowedAt, expectedReturnAt, recordId);
+    validateVenueBooking_(asset, borrowedAt, expectedReturnAt, recordId);
   } else {
     expectedReturnAt = requireDateText_(rawExpectedReturnAt, "expectedReturnAt");
     const borrowedDate = getDatePart_(borrowedAt);
@@ -1859,7 +1873,6 @@ function reviewBorrowApplication_(body) {
   row[APP_COL_BORROWED_AT] = requireTemporalText_(row[APP_COL_BORROWED_AT], "borrowedAt");
   row[APP_COL_EXPECTED_RETURN_AT] = requireTemporalText_(row[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
   row[APP_COL_REJECTION_REASON] = action === "reject" ? rejectionReason : "";
-  // 審核時順手把舊格式的 itemName 前綴正規化到 itemType 欄
   const reviewedItem = resolveItemTypeAndName_(
     row[APP_COL_ITEM_TYPE],
     row[APP_COL_ITEM_NAME],
@@ -1871,7 +1884,6 @@ function reviewBorrowApplication_(body) {
   let linkedRecordId = String(row[APP_COL_RECORD_ID] || "").trim();
   if (appType === "借用申請") {
     if (action === "approve") {
-      ensureStudentEligibleForBorrow_(String(row[2] || "").trim());
       ensureApplicationStillBookable_(row);
       linkedRecordId = createBorrowRecordFromApplicationRow_(row);
       row[APP_COL_RECORD_ID] = linkedRecordId;
@@ -1909,16 +1921,17 @@ function ensureApplicationStillBookable_(appRow) {
   if (!assetId) {
     throw new Error("申請缺少借用項目，無法核准。");
   }
+  const asset = getAssetOrThrow_(assetId);
   const borrowedAt = requireTemporalText_(appRow[APP_COL_BORROWED_AT], "borrowedAt");
   const expectedReturnAt = requireTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
 
   // 重新確認所選借用區間是否仍與既有紀錄重疊（避免多筆相同區間申請同時核准造成衝突）。
-  if (getAssetTypeMap_()[assetId] === "venue") {
-    validateVenueBooking_(assetId, borrowedAt, expectedReturnAt);
+  if (asset.type === "venue") {
+    validateVenueBooking_(asset, borrowedAt, expectedReturnAt);
     return;
   }
   ensureAssetAvailableForPeriod_(
-    assetId,
+    asset,
     getDatePart_(borrowedAt),
     getDatePart_(expectedReturnAt)
   );
@@ -1930,19 +1943,14 @@ function createBorrowRecordFromApplicationRow_(appRow) {
   const borrowedAt = requireTemporalText_(appRow[APP_COL_BORROWED_AT], "borrowedAt");
   const expectedReturnAt = requireTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
   const assetId = String(appRow[APP_COL_ASSET_ID] || "").trim();
-  const item = resolveItemTypeAndName_(
-    appRow[APP_COL_ITEM_TYPE],
-    appRow[APP_COL_ITEM_NAME],
-    assetId
-  );
   recordSheet.appendRow([
     recordId,
     String(appRow[2] || "").trim(),
     String(appRow[3] || "").trim(),
     formatPhoneForSheet_(appRow[4]),
     String(appRow[5] || "").trim(),
-    item.itemName,
-    item.itemType,
+    String(appRow[APP_COL_ITEM_NAME] || "").trim(),
+    normalizeItemType_(appRow[APP_COL_ITEM_TYPE]),
     assetId,
     borrowedAt,
     expectedReturnAt,
@@ -1987,6 +1995,23 @@ function markBorrowRecordReturnPending_(recordId) {
   }
   row[RECORD_COL_RETURN_REQUEST_STATUS] = "待審核";
   recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
+
+  const assetId = String(row[RECORD_COL_ASSET_ID] || "").trim();
+  const item = resolveItemTypeAndName_(row[RECORD_COL_ITEM_TYPE], row[RECORD_COL_ITEM_NAME], assetId);
+  return {
+    studentId: String(row[1] || "").trim(),
+    studentName: String(row[2] || "").trim(),
+    studentPhone: normalizePhoneText_(row[3]),
+    studentEmail: String(row[4] || "").trim(),
+    itemType: item.itemType,
+    itemName: item.itemName,
+    assetId: assetId,
+    borrowedAt: requireTemporalText_(row[RECORD_COL_BORROWED_AT], "borrowedAt"),
+    expectedReturnAt: requireTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT], "expectedReturnAt"),
+    borrowerGroup: String(row[RECORD_COL_BORROWER_GROUP] || "").trim(),
+    mentorName: String(row[RECORD_COL_MENTOR_NAME] || "").trim(),
+    activityName: String(row[RECORD_COL_ACTIVITY_NAME] || "").trim(),
+  };
 }
 
 function clearBorrowRecordReturnPending_(recordId) {
@@ -2195,33 +2220,10 @@ function getEarliestBorrowDateText_(workingDays) {
   var date = addDaysText_(getTodayText_(), 1);
   var count = 0;
   for (var i = 0; i < 365; i++) {
-    if (!isHolidayLikeDate_(date, holidaySet)) {
+    if (!isHoliday_(date, holidaySet)) {
       count++;
       if (count >= workingDays) return date;
     }
-    date = addDaysText_(date, 1);
-  }
-  return date;
-}
-
-function ensureBorrowLeadTime_(borrowDate) {
-  const earliest = getEarliestBorrowDateText_(BORROW_LEAD_WORKING_DAYS);
-  if (getDatePart_(borrowDate) < earliest) {
-    throw new Error(
-      "因申請需約 " +
-        BORROW_LEAD_WORKING_DAYS +
-        " 個工作天作業時間（申請當日不計入），最早可借用日期為 " +
-        earliest +
-        "（已排除週末與國定假日）。"
-    );
-  }
-}
-
-function computeNextWorkingDayText_(dateText) {
-  var holidaySet = getHolidaySet_();
-  var date = addDaysText_(dateText, 1);
-  for (var i = 0; i < 365; i++) {
-    if (isWorkingDayText_(date, holidaySet)) return date;
     date = addDaysText_(date, 1);
   }
   return date;
@@ -2234,15 +2236,16 @@ function ensureDateRange_(borrowedAt, expectedReturnAt) {
     throw new Error("expectedReturnAt 不可早於 borrowedAt");
   }
   const holidaySet = getHolidaySet_();
-  if (!isWorkingDayText_(borrowed, holidaySet)) {
-    throw new Error("borrowedAt 須為工作天（週末與國定假日不可借用設備）");
+  if (!isWorkingDayText_(borrowed, holidaySet) || !isWorkingDayText_(expected, holidaySet)) {
+    throw new Error("借用和歸還日期須為工作天（週末與國定假日不可借用設備）");
   }
-  const latestReturn = computeNextWorkingDayText_(borrowed);
+  var latestReturn = addDaysText_(borrowed, 1);
+  for (var i = 0; i < 365; i++) {
+    if (isWorkingDayText_(latestReturn, holidaySet)) break;
+    latestReturn = addDaysText_(latestReturn, 1);
+  }
   if (expected > latestReturn) {
     throw new Error("expectedReturnAt 不可晚於借用日的下一個工作天（" + latestReturn + "）");
-  }
-  if (!isWorkingDayText_(expected, holidaySet)) {
-    throw new Error("expectedReturnAt 須為工作天（週末與國定假日不可歸還設備）");
   }
 }
 
@@ -2308,14 +2311,14 @@ function isWorkingDayText_(dateText, holidaySet) {
   return !set[dateText];
 }
 
-function isHolidayLikeDate_(dateText, holidaySet) {
+function isHoliday_(dateText, holidaySet) {
   if (isWeekendDate_(dateText)) return true;
   const set = holidaySet || getHolidaySet_();
   return Boolean(set[dateText]);
 }
 
 function getVenueOpenHoursForDate_(dateText, holidaySet) {
-  const openStart = isHolidayLikeDate_(dateText, holidaySet)
+  const openStart = isHoliday_(dateText, holidaySet)
     ? VENUE_WEEKEND_OPEN_HOUR
     : VENUE_WEEKDAY_OPEN_HOUR;
   return { openStart: openStart, openEnd: VENUE_CLOSE_HOUR };
@@ -2343,129 +2346,13 @@ function formatItemTypeLabel_(itemType) {
   return ITEM_TYPE_LABELS[normalizeItemType_(itemType)] || "";
 }
 
-// 將舊格式「空間:名稱」拆成 { type, name }；沒有前綴時 type 為空字串
-function parseLegacyItemName_(raw) {
-  const text = String(raw || "").trim();
-  const match = LEGACY_ITEM_NAME_PREFIX_PATTERN.exec(text);
-  if (!match) return { type: "", name: text };
-  const prefix = match[1];
-  const type = prefix === "空間" || prefix === "場地" ? "venue" : "equipment";
-  return { type: type, name: text.slice(match[0].length).trim() };
-}
-
-// 以 itemType 欄位為主，缺少時依序退回：舊 itemName 前綴 → assets 表資產類型
+// 以 itemType 欄位為主；缺少時退回 assets 表資產類型
 function resolveItemTypeAndName_(rawItemType, rawItemName, assetId) {
-  const legacy = parseLegacyItemName_(rawItemName);
-  let type = normalizeItemType_(rawItemType) || legacy.type;
+  let type = normalizeItemType_(rawItemType);
   if (!type && assetId) {
     type = normalizeItemType_(getAssetTypeMap_()[assetId]);
   }
-  return { itemType: type, itemName: legacy.name };
-}
-
-// 一次性遷移：將 borrow_applications / borrow_records 既有列的 itemName 前綴拆到 itemType 欄。
-// 可在 Apps Script 編輯器手動執行；未執行前讀取端也會自動退回解析前綴，不影響功能。
-function migrateItemNameTypeSplit() {
-  const summary = {
-    applications: migrateItemTypeColumnForSheet_(
-      getBorrowApplicationsSheet_(),
-      BORROW_APPLICATION_HEADERS.length,
-      APP_COL_ITEM_NAME,
-      APP_COL_ITEM_TYPE,
-      APP_COL_ASSET_ID
-    ),
-    records: migrateItemTypeColumnForSheet_(
-      getBorrowRecordsSheet_(),
-      BORROW_RECORD_HEADERS.length,
-      RECORD_COL_ITEM_NAME,
-      RECORD_COL_ITEM_TYPE,
-      RECORD_COL_ASSET_ID
-    ),
-  };
-  if (summary.applications > 0 || summary.records > 0) {
-    summary.version = bumpDataVersion_();
-  }
-  console.log("itemName/itemType 遷移完成：" + JSON.stringify(summary));
-  return summary;
-}
-
-
-// 依表頭名稱重排欄位，支援：無 itemType、itemType 在末欄、或已是目標順序。
-function ensureBorrowSheetColumnLayout_(sheet, desiredHeaders) {
-  const lastCol = Math.max(sheet.getLastColumn(), desiredHeaders.length);
-  const currentHeaders = sheet
-    .getRange(1, 1, 1, lastCol)
-    .getValues()[0]
-    .map(function (h) {
-      return String(h || "").trim();
-    });
-  var alreadyMatched = desiredHeaders.length === currentHeaders.length;
-  if (alreadyMatched) {
-    for (var i = 0; i < desiredHeaders.length; i++) {
-      if (currentHeaders[i] !== desiredHeaders[i]) {
-        alreadyMatched = false;
-        break;
-      }
-    }
-  }
-  if (alreadyMatched) return false;
-
-  const oldIndexByName = {};
-  for (var c = 0; c < currentHeaders.length; c++) {
-    if (currentHeaders[c]) oldIndexByName[currentHeaders[c]] = c;
-  }
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 1) {
-    sheet.clear();
-    sheet.getRange(1, 1, 1, desiredHeaders.length).setValues([desiredHeaders]);
-    sheet.setFrozenRows(1);
-    return true;
-  }
-
-  const oldData = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-  const newData = [];
-  for (var r = 0; r < oldData.length; r++) {
-    const newRow = [];
-    for (var h = 0; h < desiredHeaders.length; h++) {
-      if (r === 0) {
-        newRow.push(desiredHeaders[h]);
-      } else {
-        const oldIdx = oldIndexByName[desiredHeaders[h]];
-        newRow.push(oldIdx === undefined ? "" : oldData[r][oldIdx]);
-      }
-    }
-    newData.push(newRow);
-  }
-
-  sheet.clear();
-  sheet.getRange(1, 1, newData.length, desiredHeaders.length).setValues(newData);
-  sheet.setFrozenRows(1);
-  return true;
-}
-
-function migrateItemTypeColumnForSheet_(sheet, columnCount, nameCol, typeCol, assetIdCol) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return 0;
-  const range = sheet.getRange(2, 1, lastRow - 1, columnCount);
-  const rows = range.getValues();
-  let updated = 0;
-  for (var i = 0; i < rows.length; i++) {
-    if (!String(rows[i][0] || "").trim()) continue;
-    const resolved = resolveItemTypeAndName_(
-      rows[i][typeCol],
-      rows[i][nameCol],
-      String(rows[i][assetIdCol] || "").trim()
-    );
-    const currentName = String(rows[i][nameCol] || "").trim();
-    const currentType = String(rows[i][typeCol] || "").trim();
-    if (currentName === resolved.itemName && currentType === resolved.itemType) continue;
-    rows[i][nameCol] = resolved.itemName;
-    rows[i][typeCol] = resolved.itemType;
-    updated++;
-  }
-  if (updated > 0) range.setValues(rows);
-  return updated;
+  return { itemType: type, itemName: String(rawItemName || "").trim() };
 }
 
 function parsePositiveInt_(raw, fieldName) {

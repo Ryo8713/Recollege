@@ -29,8 +29,8 @@ interface AvailabilityResponse {
 
 interface AssetBlockedRangesResponse {
     today: string;
-    blockedRangesByAssetId: Record<string, Array<{ start: string; end: string }>>;
-    globalPauseRanges?: Array<{ start: string; end: string }>;
+    blockedRangesByAssetId: Record<string, Array<{ startDate: string; endDate: string }>>;
+    globalPauseRanges?: Array<{ startDate: string; endDate: string }>;
 }
 
 interface AssetPauseRange {
@@ -275,7 +275,24 @@ export const sheetsApi = {
     },
 
     async createBorrowApplication(
-        payload: Omit<BorrowApplication, "id" | "createdAt" | "status" | "reviewedBy" | "reviewedAt" | "rejectionReason">,
+        payload:
+            | {
+                  type: "借用申請";
+                  studentId: string;
+                  studentName: string;
+                  studentPhone: string;
+                  studentEmail: string;
+                  borrowerGroup: string;
+                  mentorName: string;
+                  activityName: string;
+                  assetId: string;
+                  borrowedAt: string;
+                  expectedReturnAt: string;
+              }
+            | {
+                  type: "歸還申請";
+                  recordId: string;
+              },
     ): Promise<WithDataVersion<{ ok: boolean; applicationId: string }>> {
         return request<WithDataVersion<{ ok: boolean; applicationId: string }>>("borrow-applications", {
             method: "POST",

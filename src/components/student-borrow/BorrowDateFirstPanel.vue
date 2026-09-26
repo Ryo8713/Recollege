@@ -81,7 +81,6 @@
 
 		<BorrowerInfoForm
 			:form="form"
-			:is-student-borrow-blocked="submitState.isStudentBorrowBlocked"
 			:submit-disabled="submitState.submitDisabled"
 			@submit="emit('submit')"
 		/>

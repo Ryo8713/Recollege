@@ -122,7 +122,7 @@
                     <div class="space-y-1">
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="inline-flex rounded-full border border-blue-300 bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-900">借用申請</span>
-                            <span class="inline-flex rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{{ getAssetTypeLabel(app) }}</span>
+                            <span class="inline-flex rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{{ getApplicationAssetTypeLabel(app) }}</span>
                         </div>
                         <p class="text-base font-bold tracking-tight text-slate-900">{{ app.itemName }}</p>
                     </div>
@@ -196,7 +196,7 @@
                     <div class="space-y-1">
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="inline-flex rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-900">歸還申請</span>
-                            <span class="inline-flex rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{{ getAssetTypeLabel(app) }}</span>
+                            <span class="inline-flex rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{{ getApplicationAssetTypeLabel(app) }}</span>
                         </div>
                         <p class="text-base font-bold tracking-tight text-slate-900">{{ app.itemName }}</p>
                     </div>
@@ -558,7 +558,7 @@ import { formatDateZh, formatTemporalZh } from "../utils/date";
 import StaffAssetManager from "./StaffAssetManager.vue";
 import BorrowingRulesManager from "./BorrowingRulesManager.vue";
 import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
-import { getItemTypeLabel, type BorrowApplication, type BorrowRecord } from "../types/rental";
+import { getAssetTypeLabel, type BorrowApplication, type BorrowRecord } from "../types/rental";
 
 const rentalStore = useRentalStore();
 const authStore = useAuthStore();
@@ -638,13 +638,13 @@ watch(
   { immediate: true },
 );
 
-function getAssetTypeLabel(app: BorrowApplication): string {
-  return getItemTypeLabel(app.itemType) || "未分類";
+function getApplicationAssetTypeLabel(app: BorrowApplication): string {
+  return getAssetTypeLabel(app.itemType) || "未分類";
 }
 
 function formatItemLabel(item: Pick<BorrowApplication, "itemType" | "itemName">): string {
   const itemName = String(item.itemName || "").trim() || "未記錄";
-  const typeLabel = getItemTypeLabel(item.itemType);
+  const typeLabel = getAssetTypeLabel(item.itemType);
   return typeLabel ? `${itemName}(${typeLabel})` : itemName;
 }
 

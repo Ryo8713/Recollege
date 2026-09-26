@@ -6,7 +6,7 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
   const item = resolveItemTypeAndName_(
     appRow[APP_COL_ITEM_TYPE],
     appRow[APP_COL_ITEM_NAME],
-    parseStringArray_(appRow[APP_COL_ASSET_IDS])
+    String(appRow[APP_COL_ASSET_ID] || "").trim()
   );
   const borrowedAt = requireTemporalText_(appRow[APP_COL_BORROWED_AT], "borrowedAt");
   const expectedReturnAt = requireTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
