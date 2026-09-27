@@ -162,6 +162,18 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 		submitFeedback.startLoading("正在送出借用申請…");
 
 		try {
+			let borrowedAtForSubmit = form.borrowedAt;
+			let expectedReturnAtForSubmit = form.expectedReturnAt;
+			if (isVenueSelected.value) {
+				const startHour = selectedVenueStartHour.value;
+				const endHour = selectedVenueEndHour.value;
+				if (startHour == null || endHour == null) {
+					throw new Error("請選擇空間借用時段。");
+				}
+				borrowedAtForSubmit = `${form.borrowedAt} ${formatHourLabel(startHour)}`;
+				expectedReturnAtForSubmit = `${form.borrowedAt} ${formatHourLabel(endHour)}`;
+			}
+
 			await rentalStore.submitBorrowApplication({
 				studentId: form.studentId,
 				studentName: form.studentName,
@@ -171,8 +183,8 @@ export function useBorrowSubmit(params: UseBorrowSubmitParams) {
 				mentorName: form.mentorName,
 				activityName: form.activityName,
 				assetId: selectedAssetId.value,
-				borrowedAt: form.borrowedAt,
-				expectedReturnAt: form.expectedReturnAt,
+				borrowedAt: borrowedAtForSubmit,
+				expectedReturnAt: expectedReturnAtForSubmit,
 			});
 			clearAvailabilityCaches();
 			void blockedRangesReady(true);

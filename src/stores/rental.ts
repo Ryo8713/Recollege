@@ -2,7 +2,7 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAssetsStore } from "./assets";
-import { getTodayText, getNowDateTimeText } from "../utils/date";
+import { getNowDateTimeText } from "../utils/date";
 import {
     hasOverdueBorrowRestriction,
     isOverdue,
@@ -227,8 +227,9 @@ export const useRentalStore = defineStore("rental", () => {
         const previousReviewedAt = app.reviewedAt;
         const previousRecordId = app.recordId;
         const previousRejectionReason = app.rejectionReason;
-        const reviewedAt = getTodayText();
-        const shouldBeActiveNow = app.borrowedAt.slice(0, 10) <= reviewedAt;
+        const reviewedAt = getNowDateTimeText();
+        const reviewedDate = reviewedAt.slice(0, 10);
+        const shouldBeActiveNow = app.borrowedAt.slice(0, 10) <= reviewedDate;
         const previousAssetStatus = assetsStore.assets.find((a) => a.id === app.assetId)?.status;
 
         let optimisticRecord: BorrowRecord | null = null;
@@ -336,7 +337,7 @@ export const useRentalStore = defineStore("rental", () => {
 
         app.status = "已駁回";
         app.reviewedBy = staffName;
-        app.reviewedAt = getTodayText();
+        app.reviewedAt = getNowDateTimeText();
         app.rejectionReason = rejectionReason.trim();
         if (app.type === "歸還申請" && app.recordId) {
             const record = records.value.find((r) => r.id === app.recordId);

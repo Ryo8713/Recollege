@@ -4,7 +4,7 @@
 		class="fixed right-4 top-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 shadow-lg"
 	>
 		<div class="flex items-start justify-between gap-3">
-			<p class="font-semibold">可借日期可能已變動，請重新整理。</p>
+			<p class="font-semibold">{{ message }}</p>
 			<button
 				type="button"
 				class="-mr-1 rounded px-1.5 py-0.5 text-lg font-bold leading-none text-blue-700 transition hover:bg-blue-100"
@@ -20,16 +20,24 @@
 			:disabled="refreshing"
 			@click="emit('refresh')"
 		>
-			{{ refreshing ? "更新中..." : "更新可借資料" }}
+			{{ refreshing ? "更新中..." : refreshLabel }}
 		</button>
 	</div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
-	visible: boolean;
-	refreshing: boolean;
-}>();
+withDefaults(
+	defineProps<{
+		visible: boolean;
+		refreshing: boolean;
+		message?: string;
+		refreshLabel?: string;
+	}>(),
+	{
+		message: "可借日期可能已變動，請重新整理。",
+		refreshLabel: "更新可借資料",
+	},
+);
 
 const emit = defineEmits<{
 	dismiss: [];

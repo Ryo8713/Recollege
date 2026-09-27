@@ -285,7 +285,8 @@
 	import { useAssetsStore } from "../stores/assets";
 	import { useAuthStore } from "../stores/auth";
 	import { isOverdue, useRentalStore } from "../stores/rental";
-	import { formatDateSlash, formatTemporalZh, getTodayText } from "../utils/date";
+	import { formatDateSlash, getTodayText } from "../utils/date";
+	import { formatBorrowPeriodZh } from "../utils/staffDisplay";
 	import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
 	import type { Asset, AssetType, BorrowRecord } from "../types/rental";
 
@@ -633,19 +634,6 @@
 	} finally {
 		deletingAssetIds.value = deletingAssetIds.value.filter((id) => id !== asset.id);
 	}
-	}
-
-	function formatBorrowPeriodZh(start: string, end: string): string {
-	const startText = String(start || "").trim();
-	const endText = String(end || "").trim();
-	const startDateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(startText);
-	const endDateTime = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(endText);
-	if (startDateTime && endDateTime && startText.slice(0, 10) === endText.slice(0, 10)) {
-		const [, y, m, d, startTime] = startDateTime;
-		const [, , , , endTime] = endDateTime;
-		return `${y}年${Number(m)}月${Number(d)}日 ${startTime} ➜ ${endTime}`;
-	}
-	return `${formatTemporalZh(startText)} ➜ ${formatTemporalZh(endText)}`;
 	}
 
 	function openPausePanel(assetId: string) {

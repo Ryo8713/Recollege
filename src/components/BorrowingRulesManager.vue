@@ -216,7 +216,7 @@
             <div class="min-w-0">
               <p class="truncate text-sm font-semibold text-slate-900">{{ block.studentId }}</p>
               <p class="text-xs text-slate-500">
-                封鎖日：{{ formatDateZh(block.blockedAt) }}
+                封鎖日：{{ formatTemporalZh(block.blockedAt) }}
                 <span v-if="block.note"> · {{ block.note }}</span>
               </p>
             </div>
@@ -248,7 +248,7 @@ import { storeToRefs } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAuthStore } from "../stores/auth";
 import { useRentalStore } from "../stores/rental";
-import { formatDateZh, getTodayText } from "../utils/date";
+import { formatDateZh, formatTemporalZh, getTodayText } from "../utils/date";
 import type { GlobalPauseRange, Holiday } from "../types/rental";
 
 const authStore = useAuthStore();

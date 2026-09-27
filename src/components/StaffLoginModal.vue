@@ -48,7 +48,6 @@
 </template>
 
 <script setup lang="ts">
-	import { watch } from "vue";
 	import { useRouter } from "vue-router";
 	import { useAuthStore } from "../stores/auth";
 	import { useAssetsStore } from "../stores/assets";
@@ -60,22 +59,16 @@
 	const router = useRouter();
 
 	async function handleLogin() {
-		if (await authStore.loginStaff()) {
-			router.push("/staff");
-		}
-	}
+		if (!(await authStore.loginStaff())) return;
 
-	watch(
-		() => authStore.showStaffLoginModal,
-		(isOpen) => {
-			if (!isOpen) return;
-			void Promise.all([
-				assetsStore.loadAssets(),
-				rentalStore.loadApplications(),
-				rentalStore.loadRecords(),
-			]).catch(() => {
-				// Ignore prefetch errors; login flow should remain usable.
-			});
-		},
-	);
+		await Promise.all([
+			assetsStore.loadAssets(),
+			rentalStore.loadApplications(),
+			rentalStore.loadRecords(),
+		]).catch(() => {
+			// Ignore prefetch errors; StaffView will load again on mount.
+		});
+
+		router.push("/staff");
+	}
 </script>

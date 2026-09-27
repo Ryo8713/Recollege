@@ -48,6 +48,8 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	const blockedRangesRequestSeq = ref(0);
 	let blockedRangesInFlight: Promise<boolean> | null = null;
 	const BLOCKED_RANGES_TTL_MS = 60 * 1000;
+	const BLOCKED_RANGES_FETCH_ATTEMPTS = 3;
+	const BLOCKED_RANGES_RETRY_DELAY_MS = 400;
 
 	const selectedLookupAssetId = ref("");
 	const lookupDates = ref<string[]>([]);
@@ -75,33 +77,44 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 	}
 
 	async function blockedRangesReady(force = false): Promise<boolean> {
-		// Serialize requests so intermittent GAS failures are not amplified by overlap.
 		if (blockedRangesInFlight) {
-			const joined = await blockedRangesInFlight;
-			if (!force) return joined;
-			if (blockedRangesInFlight) return blockedRangesInFlight;
-		} else if (!force && !shouldRefreshBlockedRanges()) {
+			return blockedRangesInFlight;
+		}
+		if (!force && !shouldRefreshBlockedRanges()) {
 			return true;
 		}
 
 		const seq = ++blockedRangesRequestSeq.value;
 		const request = (async () => {
+			// Retry only when we have no usable snapshot (first load / total miss).
+			const maxAttempts = hasBlockedRangesSnapshot() ? 1 : BLOCKED_RANGES_FETCH_ATTEMPTS;
 			try {
-				const response = await sheetsApi.fetchAssetBlockedRanges();
-				if (seq !== blockedRangesRequestSeq.value) {
-					return blockedRangesInFlight ?? hasBlockedRangesSnapshot();
+				for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+					try {
+						const response = await sheetsApi.fetchAssetBlockedRanges();
+						if (seq !== blockedRangesRequestSeq.value) {
+							return blockedRangesInFlight ?? hasBlockedRangesSnapshot();
+						}
+						blockedRangesByAssetId.value = response.blockedRangesByAssetId ?? {};
+						globalPauseRanges.value = response.globalPauseRanges ?? [];
+						blockedRangesLoadedAt.value = Date.now();
+						return true;
+					} catch (error) {
+						console.error("blockedRangesReady error", error);
+						if (seq !== blockedRangesRequestSeq.value) {
+							return blockedRangesInFlight ?? hasBlockedRangesSnapshot();
+						}
+						if (hasBlockedRangesSnapshot()) {
+							return true;
+						}
+						if (attempt < maxAttempts) {
+							await new Promise((resolve) =>
+								setTimeout(resolve, BLOCKED_RANGES_RETRY_DELAY_MS * attempt),
+							);
+						}
+					}
 				}
-				blockedRangesByAssetId.value = response.blockedRangesByAssetId ?? {};
-				globalPauseRanges.value = response.globalPauseRanges ?? [];
-				blockedRangesLoadedAt.value = Date.now();
-				return true;
-			} catch (error) {
-				console.error("blockedRangesReady error", error);
-				if (seq !== blockedRangesRequestSeq.value) {
-					return blockedRangesInFlight ?? hasBlockedRangesSnapshot();
-				}
-				// Keep serving the last good snapshot when the API intermittently returns non-JSON / times out.
-				return hasBlockedRangesSnapshot();
+				return false;
 			} finally {
 				if (seq === blockedRangesRequestSeq.value) {
 					blockedRangesInFlight = null;

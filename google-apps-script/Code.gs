@@ -162,24 +162,6 @@ function routeRequest_(method, e) {
       return jsonResponse_(verifyStaffLogin_(body));
     }
 
-    if (path === "availability" && method === "GET") {
-      const borrowedAt = requireDateText_(e && e.parameter && e.parameter.borrowedAt, "borrowedAt");
-      return jsonResponse_(listAvailableAssetsByStartDate_(borrowedAt));
-    }
-
-    if (path === "asset-availability-dates" && method === "GET") {
-      const assetId = requireField_(e && e.parameter && e.parameter.assetId, "assetId");
-      const fromDateParam = e && e.parameter && e.parameter.fromDate;
-      const fromDate = fromDateParam
-        ? requireDateText_(fromDateParam, "fromDate")
-        : getTodayText_();
-      const windowDays = parsePositiveInt_(
-        e && e.parameter && e.parameter.windowDays,
-        "windowDays"
-      );
-      return jsonResponse_(listAssetAvailableDates_(assetId, fromDate, windowDays));
-    }
-
     if (path === "asset-blocked-ranges" && method === "GET") {
       return jsonResponse_(listAssetBlockedRanges_());
     }
@@ -285,22 +267,26 @@ function jsonResponse_(data, statusCode) {
 }
 
 function getAssetsSheet_() {
-  return getSheetWithHeaders_(SHEET_ASSETS, ASSET_HEADERS);
+  const sheet = getSheetWithHeaders_(SHEET_ASSETS, ASSET_HEADERS);
+  ensureColumnAsText_(sheet, 5); // createdAt
+  return sheet;
 }
 
 function getAssetPauseSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_ASSET_PAUSES, ASSET_PAUSE_HEADERS);
   ensureColumnAsDateText_(sheet, 3); // startDate
   ensureColumnAsDateText_(sheet, 4); // endDate
+  ensureColumnAsText_(sheet, 6); // createdAt
   return sheet;
 }
 
 function getBorrowApplicationsSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_BORROW_APPLICATIONS, BORROW_APPLICATION_HEADERS);
   ensureColumnAsText_(sheet, 5); // studentPhone
-  // 空間以小時計，borrowedAt/expectedReturnAt 可能為「YYYY-MM-DD HH:mm」，需存為純文字
   ensureColumnAsText_(sheet, APP_COL_BORROWED_AT + 1);
   ensureColumnAsText_(sheet, APP_COL_EXPECTED_RETURN_AT + 1);
+  ensureColumnAsText_(sheet, APP_COL_CREATED_AT + 1);
+  ensureColumnAsText_(sheet, APP_COL_REVIEWED_AT + 1);
   return sheet;
 }
 
@@ -309,12 +295,14 @@ function getBorrowRecordsSheet_() {
   ensureColumnAsText_(sheet, 4); // studentPhone
   ensureColumnAsText_(sheet, RECORD_COL_BORROWED_AT + 1);
   ensureColumnAsText_(sheet, RECORD_COL_EXPECTED_RETURN_AT + 1);
+  ensureColumnAsText_(sheet, RECORD_COL_RETURNED_AT + 1);
   return sheet;
 }
 
 function getHolidaysSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_HOLIDAYS, HOLIDAY_HEADERS);
   ensureColumnAsDateText_(sheet, 1); // date
+  ensureColumnAsText_(sheet, 3); // createdAt
   return sheet;
 }
 
@@ -322,62 +310,19 @@ function getGlobalPauseSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_GLOBAL_PAUSES, GLOBAL_PAUSE_HEADERS);
   ensureColumnAsDateText_(sheet, 2); // startDate
   ensureColumnAsDateText_(sheet, 3); // endDate
+  ensureColumnAsText_(sheet, 5); // createdAt
   return sheet;
 }
 
 function getStaffAccountsSheet_() {
-  const existingSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_STAFF_ACCOUNTS);
-  if (existingSheet) {
-    migrateStaffAccountsSheet_(existingSheet);
-  }
   const sheet = getSheetWithHeaders_(SHEET_STAFF_ACCOUNTS, STAFF_ACCOUNT_HEADERS);
-  ensureDefaultStaffAccount_(sheet);
+  ensureColumnAsText_(sheet, 4); // createdAt
   return sheet;
-}
-
-function migrateStaffAccountsSheet_(sheet) {
-  if (sheet.getLastRow() < 1) return;
-  const lastColumn = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(function (header) {
-    return String(header || "").trim();
-  });
-  const alreadyCurrent = STAFF_ACCOUNT_HEADERS.every(function (header, index) {
-    return headers[index] === header;
-  }) && headers.length === STAFF_ACCOUNT_HEADERS.length;
-  if (alreadyCurrent) return;
-
-  const headerIndexes = {};
-  for (var i = 0; i < headers.length; i++) {
-    if (headers[i]) headerIndexes[headers[i].toLowerCase()] = i;
-  }
-
-  const lastRow = sheet.getLastRow();
-  var migratedRows = [];
-  if (lastRow >= 2) {
-    const oldRows = sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues();
-    migratedRows = oldRows.map(function (row) {
-      const accountIndex = headerIndexes.account;
-      const account = accountIndex === undefined ? "" : String(row[accountIndex] || "").trim();
-      return STAFF_ACCOUNT_HEADERS.map(function (header) {
-        const sourceIndex = headerIndexes[header.toLowerCase()];
-        if (sourceIndex !== undefined) return row[sourceIndex];
-        if (header === "name") return account;
-        return "";
-      });
-    });
-  }
-
-  sheet.clearContents();
-  sheet.getRange(1, 1, 1, STAFF_ACCOUNT_HEADERS.length).setValues([STAFF_ACCOUNT_HEADERS]);
-  if (migratedRows.length > 0) {
-    sheet.getRange(2, 1, migratedRows.length, STAFF_ACCOUNT_HEADERS.length).setValues(migratedRows);
-  }
-  sheet.setFrozenRows(1);
 }
 
 function getStudentBlocksSheet_() {
   const sheet = getSheetWithHeaders_(SHEET_STUDENT_BLOCKS, STUDENT_BLOCK_HEADERS);
-  ensureColumnAsDateText_(sheet, 2); // blockedAt
+  ensureColumnAsText_(sheet, 2); // blockedAt
   return sheet;
 }
 
@@ -951,34 +896,6 @@ function findStaffAccount_(account) {
   return null;
 }
 
-function ensureDefaultStaffAccount_(sheet) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    sheet.appendRow([
-      DEFAULT_STAFF_ACCOUNT,
-      DEFAULT_STAFF_ACCOUNT,
-      DEFAULT_STAFF_PASSWORD,
-      getNowDateTimeText_(),
-      "system",
-    ]);
-    return;
-  }
-
-  const rows = sheet.getRange(2, 1, lastRow - 1, STAFF_ACCOUNT_HEADERS.length).getValues();
-  for (var i = 0; i < rows.length; i++) {
-    if (String(rows[i][1] || "").trim() === DEFAULT_STAFF_ACCOUNT) {
-      return;
-    }
-  }
-  sheet.appendRow([
-    DEFAULT_STAFF_ACCOUNT,
-    DEFAULT_STAFF_ACCOUNT,
-    DEFAULT_STAFF_PASSWORD,
-    getNowDateTimeText_(),
-    "system",
-  ]);
-}
-
 function readBorrowApplications_() {
   const sheet = getBorrowApplicationsSheet_();
   const lastRow = sheet.getLastRow();
@@ -998,9 +915,8 @@ function readBorrowApplications_() {
     const status = String(row[APP_COL_STATUS] || "").trim();
     const recordId = String(row[APP_COL_RECORD_ID] || "").trim();
     const reviewedBy = String(row[APP_COL_REVIEWED_BY] || "").trim();
-    const reviewedAt = normalizeDateText_(row[APP_COL_REVIEWED_AT]);
+    const reviewedAt = String(row[APP_COL_REVIEWED_AT] || "").trim();
     const assetId = String(row[APP_COL_ASSET_ID] || "").trim();
-    const item = resolveItemTypeAndName_(row[APP_COL_ITEM_TYPE], row[APP_COL_ITEM_NAME], assetId);
 
     const app = {
       id: id,
@@ -1009,8 +925,8 @@ function readBorrowApplications_() {
       studentName: String(row[3] || "").trim(),
       studentPhone: normalizePhoneText_(row[4]),
       studentEmail: String(row[5] || "").trim(),
-      itemType: item.itemType,
-      itemName: item.itemName,
+      itemType: normalizeItemType_(row[APP_COL_ITEM_TYPE]),
+      itemName: String(row[APP_COL_ITEM_NAME] || "").trim(),
       assetId: assetId,
       borrowedAt: requireTemporalText_(row[APP_COL_BORROWED_AT], "borrowedAt"),
       expectedReturnAt: requireTemporalText_(row[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt"),
@@ -1049,18 +965,17 @@ function readBorrowRecords_() {
     const status = String(row[RECORD_COL_STATUS] || "").trim();
     if (VALID_RECORD_STATUS.indexOf(status) === -1) continue;
 
-    const returnedAt = normalizeDateText_(row[RECORD_COL_RETURNED_AT]);
+    const returnedAt = String(row[RECORD_COL_RETURNED_AT] || "").trim();
     const returnRequestStatus = String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim();
     const assetId = String(row[RECORD_COL_ASSET_ID] || "").trim();
-    const item = resolveItemTypeAndName_(row[RECORD_COL_ITEM_TYPE], row[RECORD_COL_ITEM_NAME], assetId);
     const record = {
       id: id,
       studentId: String(row[1] || "").trim(),
       studentName: String(row[2] || "").trim(),
       studentPhone: normalizePhoneText_(row[3]),
       studentEmail: String(row[4] || "").trim(),
-      itemType: item.itemType,
-      itemName: item.itemName,
+      itemType: normalizeItemType_(row[RECORD_COL_ITEM_TYPE]),
+      itemName: String(row[RECORD_COL_ITEM_NAME] || "").trim(),
       assetId: assetId,
       borrowedAt: requireTemporalText_(row[RECORD_COL_BORROWED_AT], "borrowedAt"),
       expectedReturnAt: requireTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT], "expectedReturnAt"),
@@ -1107,13 +1022,24 @@ function createBorrowApplication_(body) {
     activityName = requireField_(body && body.activityName, "activityName");
     mentorName = String((body && body.mentorName) || "").trim();
 
-    const asset = getAssetOrThrow_(assetId);
-
-    const blocks = readStudentBlocks_(); 
+    const blocks = readStudentBlocks_();
     for (var b = 0; b < blocks.length; b++) {
       if (blocks[b].studentId === studentId) {
         throw new Error("您目前無法提出借用申請。請洽詢書院辦公室。");
       }
+    }
+
+    const asset = getAssetOrThrow_(assetId);
+
+    var borrowDateText;
+    if (asset.type === "venue") {
+      borrowedAt = requireDateTimeText_(body && body.borrowedAt, "空間借用開始時間");
+      expectedReturnAt = requireDateTimeText_(body && body.expectedReturnAt, "空間借用結束時間");
+      borrowDateText = getDatePart_(borrowedAt);
+    } else {
+      borrowedAt = requireDateText_(body && body.borrowedAt, "borrowedAt");
+      expectedReturnAt = requireDateText_(body && body.expectedReturnAt, "expectedReturnAt");
+      borrowDateText = borrowedAt;
     }
 
     const holidaySet = getHolidaySet_();
@@ -1126,7 +1052,7 @@ function createBorrowApplication_(body) {
       }
       earliest = addDaysText_(earliest, 1);
     }
-    if (getDatePart_(body.borrowedAt) < earliest) {
+    if (borrowDateText < earliest) {
       throw new Error(
         "因申請需約 " +
           BORROW_LEAD_WORKING_DAYS +
@@ -1135,18 +1061,12 @@ function createBorrowApplication_(body) {
           "（已排除週末與國定假日）。"
       );
     }
-    
+
     if (asset.type === "venue") {
-      const booking = validateVenueBooking_(
-        asset,
-        body && body.borrowedAt,
-        body && body.expectedReturnAt
-      );
+      const booking = validateVenueBooking_(asset, borrowedAt, expectedReturnAt);
       borrowedAt = booking.start;
       expectedReturnAt = booking.end;
     } else {
-      borrowedAt = requireDateText_(body && body.borrowedAt, "borrowedAt");
-      expectedReturnAt = requireDateText_(body && body.expectedReturnAt, "expectedReturnAt");
       ensureDateRange_(borrowedAt, expectedReturnAt);
       ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
       ensureAssetAvailableForPeriod_(asset, borrowedAt, expectedReturnAt);
@@ -1198,62 +1118,6 @@ function createBorrowApplication_(body) {
   const version = bumpDataVersion_();
 
   return { ok: true, applicationId: applicationId, version: version };
-}
-
-function listAvailableAssets_(borrowedAt, expectedReturnAt) {
-  ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
-  ensureDateRange_(borrowedAt, expectedReturnAt);
-
-  const assets = readAssets_();
-  const occupied = getOccupiedAssetIdSetForPeriod_(borrowedAt, expectedReturnAt);
-  const venues = [];
-  const equipments = [];
-
-  for (var i = 0; i < assets.length; i++) {
-    const asset = assets[i];
-    if (asset.status === "停用中") continue;
-    if (occupied[asset.id]) continue;
-    if (asset.type === "venue") venues.push(asset);
-    if (asset.type === "equipment") equipments.push(asset);
-  }
-
-  return { venues: venues, equipments: equipments };
-}
-
-function listAvailableAssetsByStartDate_(borrowedAt) {
-  ensureDateOnOrAfterToday_(borrowedAt, "borrowedAt");
-  if (isGloballyClosedDate_(borrowedAt)) {
-    return { venues: [], equipments: [] };
-  }
-
-  const assets = readAssets_();
-  // pause 與 blocked 共用 request-local cache；blocked 內已合併 pause，venue 仍需獨立 pause map 做小時判斷
-  const pauseRangesByAssetId = getPauseRangesByAssetId_();
-  const blockedRangeMap = getBlockedRangesByAssetId_();
-  const holidaySet = getHolidaySet_();
-  const venues = [];
-  const equipments = [];
-
-  for (var i = 0; i < assets.length; i++) {
-    const asset = assets[i];
-    if (asset.status === "停用中") continue;
-
-    if (asset.type === "venue") {
-      const intervals = getVenueBookingContext_(asset.id, borrowedAt);
-      const pauseRanges = pauseRangesByAssetId[asset.id] || [];
-      if (venueHasFreeHourOnDate_(borrowedAt, intervals, pauseRanges, holidaySet)) {
-        venues.push(asset);
-      }
-      continue;
-    }
-
-    if (!isWorkingDayText_(borrowedAt, holidaySet)) continue;
-    const blockedRanges = blockedRangeMap[asset.id] || [];
-    if (isDateWithinAnyRange_(borrowedAt, blockedRanges)) continue;
-    equipments.push(asset);
-  }
-
-  return { venues: venues, equipments: equipments };
 }
 
 function getAssetOrThrow_(assetId) {
@@ -1314,77 +1178,10 @@ function isDateRangeOverlapping_(startA, endA, startB, endB) {
   return startA <= endB && endA >= startB;
 }
 
-function listAssetAvailableDates_(assetId, fromDate, windowDays) {
-  ensureDateOnOrAfterToday_(fromDate, "fromDate");
-  if (windowDays < 1 || windowDays > 90) {
-    throw new Error("windowDays 需介於 1 到 90");
-  }
-
-  const targetAsset = getAssetOrThrow_(assetId);
-  if (targetAsset.status === "停用中") {
-    return { assetId: assetId, fromDate: fromDate, dates: [] };
-  }
-
-  const globalPauseRanges = readGlobalPauseRanges_();
-  if (targetAsset.type === "venue") {
-    const intervalsByDate = getVenueBookingContext_(assetId);
-    const pauseRanges = getPauseRangesByAssetId_()[assetId] || [];
-    const venueHolidaySet = getHolidaySet_();
-    const venueDates = [];
-    for (var vd = 0; vd < windowDays; vd++) {
-      const venueDate = addDaysText_(fromDate, vd);
-      if (isGloballyClosedDate_(venueDate, globalPauseRanges)) continue;
-      if (venueHasFreeHourOnDate_(venueDate, intervalsByDate[venueDate] || [], pauseRanges, venueHolidaySet)) {
-        venueDates.push(venueDate);
-      }
-    }
-    return { assetId: assetId, fromDate: fromDate, dates: venueDates };
-  }
-
-  const blockedRangeMap = getBlockedRangesByAssetId_();
-  const blockedRanges = blockedRangeMap[assetId] || [];
-  const dates = [];
-  for (var day = 0; day < windowDays; day++) {
-    const startDate = addDaysText_(fromDate, day);
-    if (isGloballyClosedDate_(startDate, globalPauseRanges)) continue;
-    if (!isWorkingDayText_(startDate, getHolidaySet_())) continue;
-    if (isDateWithinAnyRange_(startDate, blockedRanges)) continue;
-    dates.push(startDate);
-  }
-
-  return {
-    assetId: assetId,
-    fromDate: fromDate,
-    dates: dates,
-  };
-}
-
 function listAssetBlockedRanges_() {
-  const todayText = getTodayText_();
-  const blockedRangeMap = getBlockedRangesByAssetId_();
-  const normalized = {};
-  const assetIds = Object.keys(blockedRangeMap);
-
-  for (var i = 0; i < assetIds.length; i++) {
-    const assetId = assetIds[i];
-    const ranges = blockedRangeMap[assetId] || [];
-    const filtered = [];
-
-    for (var r = 0; r < ranges.length; r++) {
-      const range = ranges[r];
-      if (String(range.endDate || "").trim() >= todayText) {
-        filtered.push({ startDate: range.startDate, endDate: range.endDate });
-      }
-    }
-
-    if (filtered.length > 0) {
-      normalized[assetId] = filtered;
-    }
-  }
-
   return {
-    today: todayText,
-    blockedRangesByAssetId: normalized,
+    today: getTodayText_(),
+    blockedRangesByAssetId: getBlockedRangesByAssetId_(),
     globalPauseRanges: readGlobalPauseRanges_(),
   };
 }
@@ -1485,7 +1282,7 @@ function readStudentBlocks_() {
     if (!studentId) continue;
     list.push({
       studentId: studentId,
-      blockedAt: normalizeDateText_(rows[i][1]),
+      blockedAt: String(rows[i][1] || "").trim(),
       note: String(rows[i][2] || "").trim(),
     });
   }
@@ -1520,7 +1317,7 @@ function dailyCheckAndBlockOverdueStudents_() {
     if (!isRecordCurrentlyOverdue_(status, expectedReturnAt, todayText)) continue;
     const studentId = String(rows[i][1] || "").trim();
     if (!studentId || existingBlocks[studentId]) continue;
-    blockSheet.appendRow([studentId, todayText, "逾期自動封鎖"]);
+    blockSheet.appendRow([studentId, getNowDateTimeText_(), "逾期自動封鎖"]);
     existingBlocks[studentId] = true;
     added = true;
   }
@@ -1544,7 +1341,7 @@ function createStudentBlock_(body) {
   const note = String((body && body.note) || "").trim();
   if (note.length > 60) throw new Error("note 最多 60 字");
 
-  const todayText = getTodayText_();
+  const blockedAt = getNowDateTimeText_();
   const sheet = getStudentBlocksSheet_();
   const lastRow = sheet.getLastRow();
 
@@ -1558,9 +1355,9 @@ function createStudentBlock_(body) {
     }
   }
 
-  sheet.appendRow([studentId, todayText, note]);
+  sheet.appendRow([studentId, blockedAt, note]);
   const version = bumpDataVersion_();
-  return { ok: true, studentId: studentId, blockedAt: todayText, note: note, version: version };
+  return { ok: true, studentId: studentId, blockedAt: blockedAt, note: note, version: version };
 }
 
 function deleteStudentBlock_(body) {
@@ -1594,35 +1391,32 @@ function isBlockedByRanges_(startDate, endDate, ranges) {
 }
 
 function getVenueBookingContext_(assetId, dateText, excludeRecordId) {
-  const intervalsByDate = {};
+  const intervals = [];
   const sheet = getBorrowRecordsSheet_();
   const lastRow = sheet.getLastRow();
-  if (lastRow >= 2) {
-    const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
-    for (var i = 0; i < rows.length; i++) {
-      const recordId = String(rows[i][0] || "").trim();
-      if (excludeRecordId && recordId === excludeRecordId) continue;
+  if (lastRow < 2) return intervals;
 
-      const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
-      if (status !== "租借中" && status !== "待生效") continue;
-      if (String(rows[i][RECORD_COL_ITEM_TYPE] || "").trim() !== "venue") continue;
-      if (String(rows[i][RECORD_COL_ASSET_ID] || "").trim() !== assetId) continue;
+  const rows = sheet.getRange(2, 1, lastRow - 1, BORROW_RECORD_HEADERS.length).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    const recordId = String(rows[i][0] || "").trim();
+    if (excludeRecordId && recordId === excludeRecordId) continue;
 
-      const start = rows[i][RECORD_COL_BORROWED_AT];
-      const end = rows[i][RECORD_COL_EXPECTED_RETURN_AT];
-      const date = getDatePart_(start);
-      if (dateText && date !== dateText) continue;
-      if (!isVenueTemporal_(start) || !isVenueTemporal_(end)) continue;
+    const status = String(rows[i][RECORD_COL_STATUS] || "").trim();
+    if (status !== "租借中" && status !== "待生效") continue;
+    if (String(rows[i][RECORD_COL_ITEM_TYPE] || "").trim() !== "venue") continue;
+    if (String(rows[i][RECORD_COL_ASSET_ID] || "").trim() !== assetId) continue;
 
-      if (!intervalsByDate[date]) intervalsByDate[date] = [];
-      intervalsByDate[date].push({
-        start: getHourFromDateTime_(start),
-        end: getHourFromDateTime_(end),
-      });
-    }
+    const start = rows[i][RECORD_COL_BORROWED_AT];
+    const end = rows[i][RECORD_COL_EXPECTED_RETURN_AT];
+    if (getDatePart_(start) !== dateText) continue;
+    if (!isVenueTemporal_(start) || !isVenueTemporal_(end)) continue;
+
+    intervals.push({
+      start: getHourFromDateTime_(start),
+      end: getHourFromDateTime_(end),
+    });
   }
-  if (dateText) return intervalsByDate[dateText] || [];
-  return intervalsByDate;
+  return intervals;
 }
 
 function isDateWithinAnyRange_(dateText, ranges) {
@@ -1630,29 +1424,6 @@ function isDateWithinAnyRange_(dateText, ranges) {
     if (ranges[i].startDate <= dateText && dateText <= ranges[i].endDate) return true;
   }
   return false;
-}
-
-function computeVenueFreeStartHours_(intervals, openStart, openEnd) {
-  const free = [];
-  for (var h = openStart; h < openEnd; h++) {
-    var blocked = false;
-    for (var k = 0; k < intervals.length; k++) {
-      if (h >= intervals[k].start && h < intervals[k].end) {
-        blocked = true;
-        break;
-      }
-    }
-    if (!blocked) free.push(h);
-  }
-  return free;
-}
-
-function venueHasFreeHourOnDate_(dateText, intervals, pauseRanges, holidaySet) {
-  if (dateText < getTodayText_()) return false;
-  if (isGloballyClosedDate_(dateText)) return false;
-  if (isDateWithinAnyRange_(dateText, pauseRanges)) return false;
-  const open = getVenueOpenHoursForDate_(dateText, holidaySet);
-  return computeVenueFreeStartHours_(intervals || [], open.openStart, open.openEnd).length > 0;
 }
 
 function listVenueOccupiedSlots_(assetId, dateText) {
@@ -1864,7 +1635,7 @@ function reviewBorrowApplication_(body) {
     throw new Error("此申請已審核，無法重複操作");
   }
 
-  const reviewedAt = getTodayText_();
+  const reviewedAt = getNowDateTimeText_();
   const nextStatus = action === "approve" ? "已核准" : "已駁回";
 
   row[APP_COL_STATUS] = nextStatus;
@@ -1873,13 +1644,8 @@ function reviewBorrowApplication_(body) {
   row[APP_COL_BORROWED_AT] = requireTemporalText_(row[APP_COL_BORROWED_AT], "borrowedAt");
   row[APP_COL_EXPECTED_RETURN_AT] = requireTemporalText_(row[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
   row[APP_COL_REJECTION_REASON] = action === "reject" ? rejectionReason : "";
-  const reviewedItem = resolveItemTypeAndName_(
-    row[APP_COL_ITEM_TYPE],
-    row[APP_COL_ITEM_NAME],
-    String(row[APP_COL_ASSET_ID] || "").trim()
-  );
-  row[APP_COL_ITEM_NAME] = reviewedItem.itemName;
-  row[APP_COL_ITEM_TYPE] = reviewedItem.itemType;
+  row[APP_COL_ITEM_NAME] = String(row[APP_COL_ITEM_NAME] || "").trim();
+  row[APP_COL_ITEM_TYPE] = normalizeItemType_(row[APP_COL_ITEM_TYPE]);
 
   let linkedRecordId = String(row[APP_COL_RECORD_ID] || "").trim();
   if (appType === "借用申請") {
@@ -1987,7 +1753,7 @@ function markBorrowRecordReturnPending_(recordId) {
 
   const row = recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).getValues()[0];
   const status = String(row[RECORD_COL_STATUS] || "").trim();
-  if (status !== "租借中" && status !== "待生效") {
+  if (status !== "租借中") {
     throw new Error("此租借紀錄目前不可申請歸還");
   }
   if (String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim() === "待審核") {
@@ -1997,14 +1763,13 @@ function markBorrowRecordReturnPending_(recordId) {
   recordSheet.getRange(rowIndex, 1, 1, BORROW_RECORD_HEADERS.length).setValues([row]);
 
   const assetId = String(row[RECORD_COL_ASSET_ID] || "").trim();
-  const item = resolveItemTypeAndName_(row[RECORD_COL_ITEM_TYPE], row[RECORD_COL_ITEM_NAME], assetId);
   return {
     studentId: String(row[1] || "").trim(),
     studentName: String(row[2] || "").trim(),
     studentPhone: normalizePhoneText_(row[3]),
     studentEmail: String(row[4] || "").trim(),
-    itemType: item.itemType,
-    itemName: item.itemName,
+    itemType: normalizeItemType_(row[RECORD_COL_ITEM_TYPE]),
+    itemName: String(row[RECORD_COL_ITEM_NAME] || "").trim(),
     assetId: assetId,
     borrowedAt: requireTemporalText_(row[RECORD_COL_BORROWED_AT], "borrowedAt"),
     expectedReturnAt: requireTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT], "expectedReturnAt"),
@@ -2048,7 +1813,7 @@ function reconcileBorrowingState_() {
       const row = rows[i];
       const borrowedAt = requireTemporalText_(row[RECORD_COL_BORROWED_AT], "borrowedAt");
       const expectedReturnAt = requireTemporalText_(row[RECORD_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
-      const returnedAt = normalizeDateText_(row[RECORD_COL_RETURNED_AT]);
+      const returnedAt = String(row[RECORD_COL_RETURNED_AT] || "").trim();
       const returnRequestStatus =
         String(row[RECORD_COL_RETURN_REQUEST_STATUS] || "").trim() === "待審核" ? "待審核" : "";
       const currentStatus = String(row[RECORD_COL_STATUS] || "").trim();
@@ -2215,20 +1980,6 @@ function ensureDateOnOrAfterToday_(dateText, fieldName) {
   }
 }
 
-function getEarliestBorrowDateText_(workingDays) {
-  const holidaySet = getHolidaySet_();
-  var date = addDaysText_(getTodayText_(), 1);
-  var count = 0;
-  for (var i = 0; i < 365; i++) {
-    if (!isHoliday_(date, holidaySet)) {
-      count++;
-      if (count >= workingDays) return date;
-    }
-    date = addDaysText_(date, 1);
-  }
-  return date;
-}
-
 function ensureDateRange_(borrowedAt, expectedReturnAt) {
   const borrowed = requireDateText_(borrowedAt, "borrowedAt");
   const expected = requireDateText_(expectedReturnAt, "expectedReturnAt");
@@ -2344,23 +2095,6 @@ function normalizeItemType_(raw) {
 
 function formatItemTypeLabel_(itemType) {
   return ITEM_TYPE_LABELS[normalizeItemType_(itemType)] || "";
-}
-
-// 以 itemType 欄位為主；缺少時退回 assets 表資產類型
-function resolveItemTypeAndName_(rawItemType, rawItemName, assetId) {
-  let type = normalizeItemType_(rawItemType);
-  if (!type && assetId) {
-    type = normalizeItemType_(getAssetTypeMap_()[assetId]);
-  }
-  return { itemType: type, itemName: String(rawItemName || "").trim() };
-}
-
-function parsePositiveInt_(raw, fieldName) {
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(fieldName + " 需為正整數");
-  }
-  return value;
 }
 
 function ensureColumnAsText_(sheet, columnIndex) {

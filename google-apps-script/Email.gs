@@ -3,11 +3,8 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
   const studentId = String(appRow[2] || "").trim();
   const studentName = String(appRow[3] || "").trim();
   const studentEmail = String(appRow[5] || "").trim();
-  const item = resolveItemTypeAndName_(
-    appRow[APP_COL_ITEM_TYPE],
-    appRow[APP_COL_ITEM_NAME],
-    String(appRow[APP_COL_ASSET_ID] || "").trim()
-  );
+  const itemType = normalizeItemType_(appRow[APP_COL_ITEM_TYPE]);
+  const itemName = String(appRow[APP_COL_ITEM_NAME] || "").trim();
   const borrowedAt = requireTemporalText_(appRow[APP_COL_BORROWED_AT], "borrowedAt");
   const expectedReturnAt = requireTemporalText_(appRow[APP_COL_EXPECTED_RETURN_AT], "expectedReturnAt");
   const borrowerGroup = String(appRow[APP_COL_BORROWER_GROUP] || "").trim();
@@ -31,7 +28,7 @@ function sendReviewResultEmail_(appRow, nextStatus, reviewedAt, staffName) {
     "。\n\n" +
     rejectionReasonLine +
     "借用項目：" +
-    formatItemNameForEmail_(item.itemType, item.itemName) +
+    formatItemNameForEmail_(itemType, itemName) +
     "\n" +
     "借用期間：" +
     formatReviewPeriodForEmail_(borrowedAt, expectedReturnAt) +

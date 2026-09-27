@@ -22,11 +22,6 @@ interface ReviewBorrowApplicationPayload {
     rejectionReason?: string;
 }
 
-interface AvailabilityResponse {
-    venues: Asset[];
-    equipments: Asset[];
-}
-
 interface AssetBlockedRangesResponse {
     today: string;
     blockedRangesByAssetId: Record<string, Array<{ startDate: string; endDate: string }>>;
@@ -133,10 +128,6 @@ export const sheetsApi = {
 
     async fetchBorrowRecords(): Promise<BorrowRecord[]> {
         return request<BorrowRecord[]>("borrow-records");
-    },
-
-    async fetchAvailabilityByStartDate(borrowedAt: string): Promise<AvailabilityResponse> {
-        return request<AvailabilityResponse>("availability", undefined, { borrowedAt });
     },
 
     async fetchAssetBlockedRanges(): Promise<AssetBlockedRangesResponse> {
