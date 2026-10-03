@@ -99,24 +99,24 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { computed, onMounted, reactive, ref, type Ref } from "vue";
-import ActionFeedbackModal from "./ActionFeedbackModal.vue";
-import BorrowAssetFirstPanel from "./student-borrow/BorrowAssetFirstPanel.vue";
-import BorrowConfirmModal from "./student-borrow/BorrowConfirmModal.vue";
-import BorrowDateFirstPanel from "./student-borrow/BorrowDateFirstPanel.vue";
-import DataUpdateBanner from "./student-borrow/DataUpdateBanner.vue";
-import StudentReturnPanel from "./student-borrow/StudentReturnPanel.vue";
-import { useAssetFirstLookupPanel } from "../composables/useAssetFirstLookupPanel";
-import { useBorrowAvailability } from "../composables/useBorrowAvailability";
-import { useBorrowSubmit } from "../composables/useBorrowSubmit";
-import { useDataVersionPoll } from "../composables/useDataVersionPoll";
-import { useDateFirstBorrowPanel } from "../composables/useDateFirstBorrowPanel";
-import { useHolidays } from "../composables/useHolidays";
-import { useReturnSearch } from "../composables/useReturnSearch";
-import { useSubmitFeedback } from "../composables/useSubmitFeedback";
-import { useAssetsStore } from "../stores/assets";
-import { useRentalStore } from "../stores/rental";
-import { EMPTY_BORROW_FORM } from "../types/borrowForm";
-import { getTodayText } from "../utils/date";
+import ActionFeedbackModal from "../shared/ActionFeedbackModal.vue";
+import DataUpdateBanner from "../shared/DataUpdateBanner.vue";
+import BorrowAssetFirstPanel from "./BorrowAssetFirstPanel.vue";
+import BorrowConfirmModal from "./BorrowConfirmModal.vue";
+import BorrowDateFirstPanel from "./BorrowDateFirstPanel.vue";
+import StudentReturnPanel from "./StudentReturnPanel.vue";
+import { useAssetFirstLookupPanel } from "../../composables/useAssetFirstLookupPanel";
+import { useBorrowAvailability } from "../../composables/useBorrowAvailability";
+import { useBorrowSubmit } from "../../composables/useBorrowSubmit";
+import { useDataVersionPoll } from "../../composables/useDataVersionPoll";
+import { useDateFirstBorrowPanel } from "../../composables/useDateFirstBorrowPanel";
+import { useHolidays } from "../../composables/useHolidays";
+import { useReturnSearch } from "../../composables/useReturnSearch";
+import { useSubmitFeedback } from "../../composables/useSubmitFeedback";
+import { useAssetsStore } from "../../stores/assets";
+import { useRentalStore } from "../../stores/rental";
+import { EMPTY_BORROW_FORM } from "../../types/borrowForm";
+import { getTodayText } from "../../utils/date";
 
 const assetsStore = useAssetsStore();
 const rentalStore = useRentalStore();
@@ -171,6 +171,9 @@ const {
 	borrowEntryMode,
 	today,
 	holidayDates,
+	ensureAssetsLoaded: async () => {
+		await assetsStore.loadAssets();
+	},
 });
 
 const isStudentBorrowBlocked = computed(() => rentalStore.isStudentBorrowRestricted(form.studentId));

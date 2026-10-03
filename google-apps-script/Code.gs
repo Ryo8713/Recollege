@@ -119,7 +119,7 @@ function routeRequest_(method, e) {
   try {
     const path = getPath_(e);
 
-    if (path === "borrow-applications" && method === "GET") {
+    if (path === "applications" && method === "GET") {
       return jsonResponse_(readBorrowApplications_());
     }
 
@@ -220,12 +220,12 @@ function routeRequest_(method, e) {
       return jsonResponse_(createStaffAccount_(body));
     }
 
-    if (path === "borrow-applications" && method === "POST") {
+    if (path === "applications" && method === "POST") {
       const body = parseBody_(e);
       return jsonResponse_(createBorrowApplication_(body));
     }
 
-    if (path === "borrow-application-reviews" && method === "POST") {
+    if (path === "application-reviews" && method === "POST") {
       const body = parseBody_(e);
       return jsonResponse_(reviewBorrowApplication_(body));
     }
@@ -1030,6 +1030,8 @@ function createBorrowApplication_(body) {
     }
 
     const asset = getAssetOrThrow_(assetId);
+    itemName = asset.name;
+    itemType = asset.type;
 
     var borrowDateText;
     if (asset.type === "venue") {

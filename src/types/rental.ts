@@ -22,7 +22,7 @@ export interface Asset {
     createdAt: string;
 }
 
-export interface BorrowApplication {
+export interface Application {
     id: string;
     type: ApplicationType;
     studentId: string;
@@ -32,7 +32,6 @@ export interface BorrowApplication {
     borrowerGroup: string;
     mentorName: string;
     activityName: string;
-    /** 借用項目類型（venue / equipment） */
     itemType: AssetType;
     itemName: string;
     assetId: string;

@@ -280,15 +280,16 @@
 
 	<script setup lang="ts">
 	import { computed, onMounted, reactive, ref } from "vue";
-	import ActionFeedbackModal from "./ActionFeedbackModal.vue";
-	import { sheetsApi } from "../services/sheetsApi";
-	import { useAssetsStore } from "../stores/assets";
-	import { useAuthStore } from "../stores/auth";
-	import { isOverdue, useRentalStore } from "../stores/rental";
-	import { formatDateSlash, getTodayText } from "../utils/date";
-	import { formatBorrowPeriodZh } from "../utils/staffDisplay";
+	import ActionFeedbackModal from "../shared/ActionFeedbackModal.vue";
 	import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
-	import type { Asset, AssetType, BorrowRecord } from "../types/rental";
+	import { sheetsApi } from "../../services/sheetsApi";
+	import { useAssetsStore } from "../../stores/assets";
+	import { useAuthStore } from "../../stores/auth";
+	import { useRentalStore } from "../../stores/rental";
+	import { isOverdue } from "../../utils/borrowRestrictions";
+	import { formatDateSlash, getTodayText } from "../../utils/date";
+	import { formatBorrowPeriodZh } from "../../utils/staffDisplay";
+	import type { Asset, AssetType, BorrowRecord } from "../../types/rental";
 
 	type DisplayStatus = "available" | "borrowed" | "pending" | "disabled" | "paused" | "globalPaused";
 	type TypeFilter = "all" | "venue" | "equipment";

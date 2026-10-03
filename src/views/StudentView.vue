@@ -5,5 +5,5 @@
 </template>
 
 <script setup lang="ts">
-import StudentBorrowForm from "../components/StudentBorrowForm.vue";
+import StudentBorrowForm from "../components/student/StudentBorrowForm.vue";
 </script>

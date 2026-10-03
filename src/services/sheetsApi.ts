@@ -2,7 +2,7 @@ import { applyKnownDataVersion } from "../composables/dataVersionState";
 import type {
     Asset,
     AssetType,
-    BorrowApplication,
+    Application,
     BorrowRecord,
     Holiday,
     GlobalPauseRange,
@@ -15,7 +15,7 @@ const API_BASE_URL = import.meta.env.VITE_SHEETS_API_URL as string | undefined;
 
 type WithDataVersion<T> = T & { version?: string };
 
-interface ReviewBorrowApplicationPayload {
+interface ReviewApplicationPayload {
     applicationId: string;
     action: "approve" | "reject";
     staffName: string;
@@ -122,8 +122,8 @@ export const sheetsApi = {
         return request<Asset[]>("assets");
     },
 
-    async fetchBorrowApplications(): Promise<BorrowApplication[]> {
-        return request<BorrowApplication[]>("borrow-applications");
+    async fetchApplications(): Promise<Application[]> {
+        return request<Application[]>("applications");
     },
 
     async fetchBorrowRecords(): Promise<BorrowRecord[]> {
@@ -265,7 +265,7 @@ export const sheetsApi = {
         });
     },
 
-    async createBorrowApplication(
+    async createApplication(
         payload:
             | {
                   type: "借用申請";
@@ -285,17 +285,17 @@ export const sheetsApi = {
                   recordId: string;
               },
     ): Promise<WithDataVersion<{ ok: boolean; applicationId: string }>> {
-        return request<WithDataVersion<{ ok: boolean; applicationId: string }>>("borrow-applications", {
+        return request<WithDataVersion<{ ok: boolean; applicationId: string }>>("applications", {
             method: "POST",
             body: JSON.stringify(payload),
         });
     },
 
-    async reviewBorrowApplication(
-        payload: ReviewBorrowApplicationPayload,
+    async reviewApplication(
+        payload: ReviewApplicationPayload,
     ): Promise<WithDataVersion<{ ok: boolean; applicationId: string; status: string; recordId?: string }>> {
         return request<WithDataVersion<{ ok: boolean; applicationId: string; status: string; recordId?: string }>>(
-            "borrow-application-reviews",
+            "application-reviews",
             {
                 method: "POST",
                 body: JSON.stringify(payload),

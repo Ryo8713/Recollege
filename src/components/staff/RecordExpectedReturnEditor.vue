@@ -64,18 +64,18 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { sheetsApi } from "../services/sheetsApi";
-import { useAssetsStore } from "../stores/assets";
-import { useAuthStore } from "../stores/auth";
-import { useRentalStore } from "../stores/rental";
+import { sheetsApi } from "../../services/sheetsApi";
+import { useAssetsStore } from "../../stores/assets";
+import { useAuthStore } from "../../stores/auth";
+import { useRentalStore } from "../../stores/rental";
 import {
 	computeValidEquipmentReturnDates,
 	computeValidVenueEndHours,
 	findConflictingBorrowRecord,
 	formatConflictMessage,
-} from "../utils/staffReturnDateOptions";
-import { formatDateZh } from "../utils/date";
-import type { BorrowRecord } from "../types/rental";
+} from "../../utils/staffReturnDateOptions";
+import { formatDateZh } from "../../utils/date";
+import type { BorrowRecord } from "../../types/rental";
 
 const props = defineProps<{
 	record: BorrowRecord;

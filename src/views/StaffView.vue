@@ -71,12 +71,12 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import BorrowingRulesManager from "../components/BorrowingRulesManager.vue";
-import DataUpdateBanner from "../components/student-borrow/DataUpdateBanner.vue";
-import StaffApprovalsPanel from "../components/StaffApprovalsPanel.vue";
-import StaffAssetManager from "../components/StaffAssetManager.vue";
-import StaffDashboardPanel from "../components/StaffDashboardPanel.vue";
-import StaffReviewedPanel from "../components/StaffReviewedPanel.vue";
+import DataUpdateBanner from "../components/shared/DataUpdateBanner.vue";
+import BorrowingRulesManager from "../components/staff/BorrowingRulesManager.vue";
+import StaffApprovalsPanel from "../components/staff/StaffApprovalsPanel.vue";
+import StaffAssetManager from "../components/staff/StaffAssetManager.vue";
+import StaffDashboardPanel from "../components/staff/StaffDashboardPanel.vue";
+import StaffReviewedPanel from "../components/staff/StaffReviewedPanel.vue";
 import { useDataVersionPoll } from "../composables/useDataVersionPoll";
 import { useAssetsStore } from "../stores/assets";
 import { useRentalStore } from "../stores/rental";

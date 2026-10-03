@@ -48,27 +48,11 @@
 </template>
 
 <script setup lang="ts">
-	import { useRouter } from "vue-router";
-	import { useAuthStore } from "../stores/auth";
-	import { useAssetsStore } from "../stores/assets";
-	import { useRentalStore } from "../stores/rental";
+	import { useAuthStore } from "../../stores/auth";
 
 	const authStore = useAuthStore();
-	const assetsStore = useAssetsStore();
-	const rentalStore = useRentalStore();
-	const router = useRouter();
 
-	async function handleLogin() {
-		if (!(await authStore.loginStaff())) return;
-
-		await Promise.all([
-			assetsStore.loadAssets(),
-			rentalStore.loadApplications(),
-			rentalStore.loadRecords(),
-		]).catch(() => {
-			// Ignore prefetch errors; StaffView will load again on mount.
-		});
-
-		router.push("/staff");
+	function handleLogin() {
+		void authStore.loginStaff();
 	}
 </script>

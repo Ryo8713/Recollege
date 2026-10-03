@@ -3,29 +3,17 @@ import { defineStore } from "pinia";
 import { sheetsApi } from "../services/sheetsApi";
 import { useAssetsStore } from "./assets";
 import { getNowDateTimeText } from "../utils/date";
-import {
-    hasOverdueBorrowRestriction,
-    isOverdue,
-    BORROW_BLOCK_MESSAGE,
-    wasReturnedLate,
-} from "../utils/borrowRestrictions";
-import type { BorrowApplication, BorrowRecord, StudentBlock } from "../types/rental";
+import { isOverdue, BORROW_BLOCK_MESSAGE } from "../utils/borrowRestrictions";
+import type { Application, BorrowRecord, StudentBlock } from "../types/rental";
 
 export interface ReturnSearchRecord extends BorrowRecord {
     returnPending: boolean;
 }
 
-export {
-    hasOverdueBorrowRestriction,
-    isOverdue,
-    BORROW_BLOCK_MESSAGE,
-    wasReturnedLate,
-} from "../utils/borrowRestrictions";
-
 export const useRentalStore = defineStore("rental", () => {
     const assetsStore = useAssetsStore();
 
-    const applications = ref<BorrowApplication[]>([]);
+    const applications = ref<Application[]>([]);
     const records = ref<BorrowRecord[]>([]);
     const studentBlocks = ref<StudentBlock[]>([]);
     const loading = ref(false);
@@ -107,7 +95,7 @@ export const useRentalStore = defineStore("rental", () => {
         loadError.value = "";
         inFlightApplicationsLoad.value = (async () => {
             try {
-                applications.value = await sheetsApi.fetchBorrowApplications();
+                applications.value = await sheetsApi.fetchApplications();
                 loadedApplicationsAt.value = Date.now();
             } catch (error) {
                 loadError.value = error instanceof Error ? error.message : "讀取資料失敗";
@@ -194,9 +182,9 @@ export const useRentalStore = defineStore("rental", () => {
         }
 
         const appPayload = { ...payload, type: "借用申請" as const };
-        const { applicationId } = await sheetsApi.createBorrowApplication(appPayload);
+        const { applicationId } = await sheetsApi.createApplication(appPayload);
 
-        const application: BorrowApplication = {
+        const application: Application = {
             id: applicationId,
             type: "借用申請",
             ...payload,
@@ -280,7 +268,7 @@ export const useRentalStore = defineStore("rental", () => {
         }
 
         try {
-            const result = await sheetsApi.reviewBorrowApplication({
+            const result = await sheetsApi.reviewApplication({
                 applicationId,
                 action: "approve",
                 staffName,
@@ -347,7 +335,7 @@ export const useRentalStore = defineStore("rental", () => {
         }
 
         try {
-            await sheetsApi.reviewBorrowApplication({
+            await sheetsApi.reviewApplication({
                 applicationId,
                 action: "reject",
                 staffName,
@@ -370,15 +358,6 @@ export const useRentalStore = defineStore("rental", () => {
         }
     }
 
-    function getRecordsByStudentId(studentId: string): ReturnSearchRecord[] {
-        return records.value
-            .filter((r) => r.studentId === studentId && r.status === "租借中")
-            .map((record) => ({
-                ...record,
-                returnPending: record.returnRequestStatus === "待審核",
-            }));
-    }
-
     async function updateRecordExpectedReturnAt(payload: {
         operatorAccount: string;
         recordId: string;
@@ -399,12 +378,12 @@ export const useRentalStore = defineStore("rental", () => {
             throw new Error("此項目已有待審核歸還申請，請等待職員審核。");
         }
 
-        const { applicationId } = await sheetsApi.createBorrowApplication({
+        const { applicationId } = await sheetsApi.createApplication({
             type: "歸還申請",
             recordId: payload.recordId,
         });
 
-        const app: BorrowApplication = {
+        const app: Application = {
             id: applicationId,
             type: "歸還申請",
             studentId: record.studentId,
@@ -442,11 +421,7 @@ export const useRentalStore = defineStore("rental", () => {
         inProgressRecords,
         overdueRecords,
         blockedStudentIds,
-        isOverdue,
-        wasReturnedLate,
-        hasOverdueBorrowRestriction,
         isStudentBorrowRestricted,
-        BORROW_BLOCK_MESSAGE,
         loadApplications,
         loadRecords,
         loadStudentBlocks,
@@ -457,7 +432,6 @@ export const useRentalStore = defineStore("rental", () => {
         approveApplication,
         rejectApplication,
         isReviewing,
-        getRecordsByStudentId,
         submitReturnApplication,
     };
 });

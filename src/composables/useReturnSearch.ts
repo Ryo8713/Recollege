@@ -39,7 +39,12 @@ export function useReturnSearch(submitFeedback: SubmitFeedbackActions, options: 
 		returnSearchLoading.value = true;
 		try {
 			await rentalStore.loadRecords();
-			const results = rentalStore.getRecordsByStudentId(returnSearchId.value);
+			const results = rentalStore.records
+				.filter((r) => r.studentId === returnSearchId.value && r.status === "租借中")
+				.map((record) => ({
+					...record,
+					returnPending: record.returnRequestStatus === "待審核",
+				}));
 			if (results.length === 0) {
 				returnSearchError.value = "查無此學號的租借中紀錄。";
 				return;
@@ -67,10 +72,12 @@ export function useReturnSearch(submitFeedback: SubmitFeedbackActions, options: 
 				),
 			);
 
-			options.onSubmitted();
-			returnResults.value = [];
+			const submittedIds = new Set(recordsToSubmit.map((record) => record.id));
+			returnResults.value = returnResults.value.map((record) =>
+				submittedIds.has(record.id) ? { ...record, returnPending: true } : record,
+			);
 			selectedReturnIds.value = [];
-			returnSearchId.value = "";
+			options.onSubmitted();
 			submitFeedback.showSuccess("送出成功", `已送出 ${recordsToSubmit.length} 筆歸還申請。`);
 		} catch (e) {
 			const message = e instanceof Error ? e.message : "送出失敗，請稍後再試。";

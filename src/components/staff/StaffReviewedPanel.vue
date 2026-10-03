@@ -134,15 +134,15 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useRentalStore } from "../stores/rental";
-import type { BorrowApplication } from "../types/rental";
-import { formatTemporalZh } from "../utils/date";
+import { useRentalStore } from "../../stores/rental";
+import type { Application } from "../../types/rental";
+import { formatTemporalZh } from "../../utils/date";
 import {
 	datePart,
 	formatBorrowItemLabel,
 	formatBorrowPeriodZh,
 	formatMonthLabel,
-} from "../utils/staffDisplay";
+} from "../../utils/staffDisplay";
 
 const rentalStore = useRentalStore();
 const selectedReviewedMonthKey = ref("");
@@ -158,7 +158,7 @@ const reviewedApplications = computed(() =>
 );
 
 const reviewedApplicationMonthSections = computed(() => {
-	const byMonth = new Map<string, BorrowApplication[]>();
+	const byMonth = new Map<string, Application[]>();
 	for (const app of reviewedApplications.value) {
 		const sourceDate = datePart(app.reviewedAt || app.createdAt || app.borrowedAt);
 		const key = /^\d{4}-\d{2}/.test(sourceDate) ? sourceDate.slice(0, 7) : "未記錄";
@@ -198,7 +198,7 @@ watch(
 	{ immediate: true },
 );
 
-function getReviewedCardBorderClass(app: BorrowApplication): string {
+function getReviewedCardBorderClass(app: Application): string {
 	if (app.status === "已駁回") return "border-red-200 border-l-4 border-l-red-500";
 	if (app.type === "歸還申請") return "border-emerald-200 border-l-4 border-l-emerald-500";
 	return "border-blue-200 border-l-4 border-l-blue-500";

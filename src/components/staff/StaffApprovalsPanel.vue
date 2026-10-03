@@ -142,11 +142,11 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { useAuthStore } from "../stores/auth";
-import { useRentalStore } from "../stores/rental";
-import { getAssetTypeLabel, type ApplicationType, type BorrowApplication } from "../types/rental";
-import { formatTemporalZh } from "../utils/date";
-import { formatBorrowPeriodZh } from "../utils/staffDisplay";
+import { useAuthStore } from "../../stores/auth";
+import { useRentalStore } from "../../stores/rental";
+import { getAssetTypeLabel, type Application, type ApplicationType } from "../../types/rental";
+import { formatTemporalZh } from "../../utils/date";
+import { formatBorrowPeriodZh } from "../../utils/staffDisplay";
 
 type ApprovalFilterKey = "borrow" | "return";
 type AssetFilterKey = "all" | "venue" | "equipment";
@@ -195,18 +195,18 @@ const assetFilter = ref<AssetFilterKey>("all");
 const borrowDateSort = ref<BorrowDateSortKey>("borrowedAtAsc");
 const rejectionReasons = reactive<Record<string, string>>({});
 
-function getApplicationAssetTypeLabel(app: BorrowApplication): string {
+function getApplicationAssetTypeLabel(app: Application): string {
 	return getAssetTypeLabel(app.itemType) || "未分類";
 }
 
-function matchAssetFilter(app: BorrowApplication): boolean {
+function matchAssetFilter(app: Application): boolean {
 	if (assetFilter.value === "all") return true;
 	if (assetFilter.value === "venue") return app.itemType === "venue";
 	if (assetFilter.value === "equipment") return app.itemType === "equipment";
 	return true;
 }
 
-function sortByBorrowedAt(apps: BorrowApplication[]): BorrowApplication[] {
+function sortByBorrowedAt(apps: Application[]): Application[] {
 	return [...apps].sort((a, b) => {
 		const diff = a.borrowedAt.localeCompare(b.borrowedAt);
 		if (diff !== 0) {
@@ -216,7 +216,7 @@ function sortByBorrowedAt(apps: BorrowApplication[]): BorrowApplication[] {
 	});
 }
 
-function getPendingApplications(type: ApplicationType): BorrowApplication[] {
+function getPendingApplications(type: ApplicationType): Application[] {
 	const filtered = rentalStore.pendingApplications.filter(
 		(a) => a.type === type && matchAssetFilter(a),
 	);

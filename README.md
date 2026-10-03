@@ -27,6 +27,6 @@
 3. Enable Pages in GitHub repo settings (Build and deployment: GitHub Actions).
 
 ## API contract (example)
-- `GET /borrow-applications` -> `BorrowApplication[]`
+- `GET /borrow-applications` -> `Application[]`
 - `GET /borrow-records` -> `BorrowRecord[]`
 - `POST /borrow-applications` -> `{ ok: boolean, applicationId: string }`

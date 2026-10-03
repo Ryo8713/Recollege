@@ -6,7 +6,7 @@
 				v-model.trim="returnSearchId"
 				:disabled="returnSearchLoading"
 				class="flex-1 rounded-xl border border-slate-300 px-3 py-2 outline-none ring-blue-500 focus:ring"
-				placeholder="請輸入學號/員編"
+				placeholder="學號/員編"
 				@keyup.enter="emit('search')"
 			/>
 			<button
@@ -74,8 +74,9 @@
 </template>
 
 <script setup lang="ts">
-import { isOverdue, type ReturnSearchRecord } from "../../stores/rental";
+import type { ReturnSearchRecord } from "../../stores/rental";
 import { getAssetTypeLabel } from "../../types/rental";
+import { isOverdue } from "../../utils/borrowRestrictions";
 import { formatTemporalZh } from "../../utils/date";
 
 defineProps<{

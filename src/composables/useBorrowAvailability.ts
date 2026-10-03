@@ -17,10 +17,11 @@ interface UseBorrowAvailabilityParams {
 	borrowEntryMode: Ref<BorrowEntryMode>;
 	today: string;
 	holidayDates: Ref<Set<string>>;
+	ensureAssetsLoaded: () => Promise<void>;
 }
 
 export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
-	const { assets, form, mode, borrowEntryMode, today, holidayDates } = params;
+	const { assets, form, mode, borrowEntryMode, today, holidayDates, ensureAssetsLoaded } = params;
 
 	// ===== State =====
 	const selectedAssetId = ref("");
@@ -224,9 +225,9 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 
 		availabilityLoading.value = true;
 		try {
-			const ready = await blockedRangesReady();
+			const [, ready] = await Promise.all([ensureAssetsLoaded(), blockedRangesReady()]);
 			if (seq !== availabilityRequestSeq.value) return;
-			
+
 			if (isGloballyClosedDate(form.borrowedAt)) {
 				availableVenues.value = [];
 				availableEquipments.value = [];
@@ -234,22 +235,24 @@ export function useBorrowAvailability(params: UseBorrowAvailabilityParams) {
 				availabilityError.value = "";
 				return;
 			}
-			if (ready && assets.value.length > 0) {
-				const localResult = computeAvailableAssets(form.borrowedAt);
-				availabilityCache.set(form.borrowedAt, localResult);
-				applyAvailabilityResult(localResult);
-				return;
-			}
-			else {
+			if (!ready) {
 				availableVenues.value = [];
 				availableEquipments.value = [];
 				availableReturnDates.value = [];
-				if (!ready) {
-					availabilityError.value = "無法載入占用資料，請稍後再試";
-				} else if (assets.value.length === 0) {
-					availabilityError.value = "資產資料尚未載入，請稍後再試";
-				}
+				availabilityError.value = "無法載入占用資料，請稍後再試";
+				return;
 			}
+			if (assets.value.length === 0) {
+				availableVenues.value = [];
+				availableEquipments.value = [];
+				availableReturnDates.value = [];
+				availabilityError.value = "資產資料尚未載入，請稍後再試";
+				return;
+			}
+
+			const localResult = computeAvailableAssets(form.borrowedAt);
+			availabilityCache.set(form.borrowedAt, localResult);
+			applyAvailabilityResult(localResult);
 		} catch (error) {
 			if (seq !== availabilityRequestSeq.value) return;
 			availableVenues.value = [];

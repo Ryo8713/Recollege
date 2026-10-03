@@ -36,12 +36,22 @@
 </template>
 
 <script setup lang="ts">
+import { watch } from "vue";
 import { RouterView, useRouter } from "vue-router";
-import StaffLoginModal from "./components/StaffLoginModal.vue";
+import StaffLoginModal from "./components/staff/StaffLoginModal.vue";
 import { useAuthStore } from "./stores/auth";
 
 const authStore = useAuthStore();
 const router = useRouter();
+
+watch(
+	() => authStore.isStaffLoggedIn,
+	(loggedIn) => {
+		if (loggedIn && router.currentRoute.value.name !== "staff") {
+			void router.push({ name: "staff" });
+		}
+	},
+);
 
 function handleStaffLogout() {
 	authStore.logoutStaff();

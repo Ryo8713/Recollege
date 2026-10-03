@@ -89,7 +89,7 @@
 						待生效
 					</span>
 					<span
-						v-else-if="rentalStore.isOverdue(record)"
+						v-else-if="isOverdue(record)"
 						class="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-800"
 					>
 						已逾借
@@ -152,15 +152,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import RecordExpectedReturnEditor from "./RecordExpectedReturnEditor.vue";
-import { useAuthStore } from "../stores/auth";
-import { useRentalStore } from "../stores/rental";
-import { formatTemporalZh, getTodayText } from "../utils/date";
+import { useAuthStore } from "../../stores/auth";
+import { useRentalStore } from "../../stores/rental";
+import { isOverdue } from "../../utils/borrowRestrictions";
+import { formatTemporalZh, getTodayText } from "../../utils/date";
 import {
 	datePart,
 	diffDaysFromToday,
 	formatBorrowItemLabel,
 	getOverdueDays,
-} from "../utils/staffDisplay";
+} from "../../utils/staffDisplay";
 
 const rentalStore = useRentalStore();
 const authStore = useAuthStore();
