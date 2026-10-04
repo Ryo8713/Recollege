@@ -112,27 +112,37 @@
 				<h3 class="font-semibold text-slate-900">新增職員帳號</h3>
 				<span class="text-xs font-semibold text-slate-500">目前登入：{{ authStore.staffName || authStore.staffAccount }}</span>
 			</div>
-			<form class="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4" @submit.prevent="handleCreateStaffAccount">
+			<form
+				class="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4"
+				autocomplete="off"
+				@submit.prevent="handleCreateStaffAccount"
+			>
 				<input
 					v-model.trim="staffAccountForm.account"
 					class="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+					name="new-staff-account"
 					placeholder="新職員帳號"
 					maxlength="32"
+					autocomplete="off"
 					:disabled="staffAccountSubmitting"
 				/>
 				<input
 					v-model.trim="staffAccountForm.name"
 					class="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+					name="new-staff-name"
 					placeholder="新職員姓名"
 					maxlength="32"
+					autocomplete="off"
 					:disabled="staffAccountSubmitting"
 				/>
 				<input
 					v-model="staffAccountForm.password"
 					type="password"
 					class="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+					name="new-staff-password"
 					placeholder="新職員密碼"
 					maxlength="32"
+					autocomplete="new-password"
 					:disabled="staffAccountSubmitting"
 				/>
 				<button
